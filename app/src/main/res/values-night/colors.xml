@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Centralized color palette — DARK (deep blue/purple) design system.
+    Automatically selected when the device is in dark mode / night mode.
+    Comfortable for long stack-trace reading: no pure black, high text contrast.
+-->
+<resources>
+    <!-- Core palette -->
+    <color name="background">#0D1025</color>
+    <color name="surface">#161B33</color>
+    <color name="surface_variant">#1E2347</color>
+    <color name="primary">#8B5CF6</color>
+    <color name="secondary">#6D28D9</color>
+    <color name="accent">#E879F9</color>
+
+    <color name="on_primary">#FFFFFF</color>
+    <color name="on_accent">#1A0B2E</color>
+    <color name="text_primary">#F1F1F1</color>
+    <color name="text_secondary">#B0B3D1</color>
+
+    <!-- Semantic -->
+    <color name="divider">#2E3A5E</color>
+    <color name="error">#FF8A80</color>
+    <color name="on_error">#1A0B2E</color>
+    <color name="code_background">#0A0D1F</color>
+    <color name="ripple">#338B5CF6</color>
+
+    <!-- Legacy aliases (kept for compatibility) -->
+    <color name="crash_background">@color/background</color>
+    <color name="crash_surface">@color/surface</color>
+    <color name="crash_surface_variant">@color/surface_variant</color>
+    <color name="crash_text_primary">@color/text_primary</color>
+    <color name="crash_text_secondary">@color/text_secondary</color>
+    <color name="crash_divider">@color/divider</color>
+    <color name="crash_code_background">@color/code_background</color>
+    <color name="crash_error">@color/error</color>
+    <color name="crash_accent">@color/accent</color>
+    <color name="crash_on_primary">@color/on_primary</color>
+</resources>

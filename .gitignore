@@ -1,0 +1,26 @@
+# Gradle / AGP
+.gradle/
+build/
+app/build/
+app/.cxx/
+local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Media artifacts
+*.wav
+*.mp4
+*.analysis.json
+
+# Misc
+*.log
+.DS_Store

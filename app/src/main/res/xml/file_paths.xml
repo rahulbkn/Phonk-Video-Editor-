@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <paths>
+        <files-path name="exports" path="exports/" />
+        <cache-path name="cache" path="/" />
+    </paths>
+</resources>

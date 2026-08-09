@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shared dimensions for the crash screens. No raw dp/sp scattered in XML. -->
+<resources>
+    <dimen name="crash_screen_padding">16dp</dimen>
+    <dimen name="crash_section_spacing">14dp</dimen>
+    <dimen name="crash_section_title_text">16sp</dimen>
+    <dimen name="crash_title_text">26sp</dimen>
+    <dimen name="crash_body_text">14sp</dimen>
+    <dimen name="crash_small_text">13sp</dimen>
+    <dimen name="crash_code_text">12sp</dimen>
+    <dimen name="crash_field_gap">6dp</dimen>
+    <dimen name="crash_stack_padding">8dp</dimen>
+    <dimen name="crash_stack_min_height">180dp</dimen>
+    <dimen name="crash_button_height">48dp</dimen>
+    <dimen name="crash_button_margin">4dp</dimen>
+    <dimen name="crash_icon_size">64dp</dimen>
+    <dimen name="crash_divider_height">1dp</dimen>
+    <dimen name="crash_radius_card">14dp</dimen>
+    <dimen name="crash_radius_code">10dp</dimen>
+    <dimen name="crash_row_padding">12dp</dimen>
+    <dimen name="crash_history_title_text">22sp</dimen>
+    <dimen name="crash_line_spacing">3dp</dimen>
+</resources>

@@ -1,0 +1,342 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/background">
+
+    <ScrollView
+        android:id="@+id/crash_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/crash_screen_padding">
+
+            <ImageView
+                android:layout_width="@dimen/crash_icon_size"
+                android:layout_height="@dimen/crash_icon_size"
+                android:src="@drawable/ic_crash"
+                android:layout_marginBottom="@dimen/crash_field_gap"
+                android:importantForAccessibility="no"
+                android:contentDescription="@string/crash_icon_content_description" />
+
+            <TextView
+                android:id="@+id/tv_crash_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/crash_title"
+                android:textSize="@dimen/crash_title_text"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary" />
+
+            <TextView
+                android:id="@+id/tv_crash_subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/crash_field_gap"
+                android:text="@string/crash_subtitle"
+                android:textSize="@dimen/crash_body_text"
+                android:lineSpacingExtra="@dimen/crash_line_spacing"
+                android:textColor="@color/text_secondary" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/crash_divider_height"
+                android:layout_marginTop="@dimen/crash_section_spacing"
+                android:layout_marginBottom="@dimen/crash_section_spacing"
+                android:background="@color/divider" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/crash_details_title"
+                android:textSize="@dimen/crash_section_title_text"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="@dimen/crash_field_gap" />
+
+            <!-- Exception -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <TextView
+                    android:id="@+id/tv_crash_label_exception"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/crash_label_exception"
+                    android:textColor="@color/text_secondary" />
+                <TextView
+                    android:id="@+id/tv_crash_value_exception"
+                    android:layout_width="0dp"
+                    android:layout_weight="2"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:fontFamily="monospace"
+                    android:textColor="@color/text_primary" />
+            </LinearLayout>
+
+            <!-- Message -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="@dimen/crash_field_gap">
+                <TextView
+                    android:id="@+id/tv_crash_label_message"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/crash_label_message"
+                    android:textColor="@color/text_secondary" />
+                <TextView
+                    android:id="@+id/tv_crash_value_message"
+                    android:layout_width="0dp"
+                    android:layout_weight="2"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:fontFamily="monospace"
+                    android:textIsSelectable="true"
+                    android:textColor="@color/text_primary" />
+            </LinearLayout>
+
+            <!-- Thread -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="@dimen/crash_field_gap">
+                <TextView
+                    android:id="@+id/tv_crash_label_thread"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/crash_label_thread"
+                    android:textColor="@color/text_secondary" />
+                <TextView
+                    android:id="@+id/tv_crash_value_thread"
+                    android:layout_width="0dp"
+                    android:layout_weight="2"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:fontFamily="monospace"
+                    android:textColor="@color/text_primary" />
+            </LinearLayout>
+
+            <!-- Time -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="@dimen/crash_field_gap">
+                <TextView
+                    android:id="@+id/tv_crash_label_time"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/crash_label_time"
+                    android:textColor="@color/text_secondary" />
+                <TextView
+                    android:id="@+id/tv_crash_value_time"
+                    android:layout_width="0dp"
+                    android:layout_weight="2"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:fontFamily="monospace"
+                    android:textColor="@color/text_primary" />
+            </LinearLayout>
+
+            <!-- App Version -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="@dimen/crash_field_gap">
+                <TextView
+                    android:id="@+id/tv_crash_label_version"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/crash_label_app_version"
+                    android:textColor="@color/text_secondary" />
+                <TextView
+                    android:id="@+id/tv_crash_value_version"
+                    android:layout_width="0dp"
+                    android:layout_weight="2"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:fontFamily="monospace"
+                    android:textColor="@color/text_primary" />
+            </LinearLayout>
+
+            <!-- Android -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="@dimen/crash_field_gap">
+                <TextView
+                    android:id="@+id/tv_crash_label_android"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/crash_label_android"
+                    android:textColor="@color/text_secondary" />
+                <TextView
+                    android:id="@+id/tv_crash_value_android"
+                    android:layout_width="0dp"
+                    android:layout_weight="2"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:fontFamily="monospace"
+                    android:textColor="@color/text_primary" />
+            </LinearLayout>
+
+            <!-- Device -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="@dimen/crash_field_gap">
+                <TextView
+                    android:id="@+id/tv_crash_label_device"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/crash_label_device"
+                    android:textColor="@color/text_secondary" />
+                <TextView
+                    android:id="@+id/tv_crash_value_device"
+                    android:layout_width="0dp"
+                    android:layout_weight="2"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:fontFamily="monospace"
+                    android:textColor="@color/text_primary" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/crash_divider_height"
+                android:layout_marginTop="@dimen/crash_section_spacing"
+                android:layout_marginBottom="@dimen/crash_field_gap"
+                android:background="@color/divider" />
+
+            <TextView
+                android:id="@+id/tv_crash_stack_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/crash_stack_trace"
+                android:textSize="@dimen/crash_section_title_text"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="@dimen/crash_field_gap" />
+
+            <TextView
+                android:id="@+id/tv_crash_stack_trace"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:textSize="@dimen/crash_code_text"
+                android:textIsSelectable="true"
+                android:minHeight="@dimen/crash_stack_min_height"
+                android:lineSpacingExtra="@dimen/crash_line_spacing"
+                android:padding="@dimen/crash_stack_padding"
+                android:background="@drawable/bg_crash_code"
+                android:textColor="@color/text_primary"
+                android:contentDescription="@string/crash_stack_content_description" />
+        </LinearLayout>
+    </ScrollView>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/crash_divider_height"
+        android:background="@color/divider" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/crash_screen_padding"
+        android:paddingEnd="@dimen/crash_screen_padding"
+        android:paddingTop="@dimen/crash_button_margin"
+        android:gravity="center">
+
+        <Button
+            android:id="@+id/btn_crash_copy"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="@dimen/crash_button_height"
+            android:layout_margin="@dimen/crash_button_margin"
+            android:background="@drawable/bg_button_secondary"
+            android:textColor="@color/text_primary"
+            android:text="@string/crash_copy" />
+
+        <Button
+            android:id="@+id/btn_crash_share"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="@dimen/crash_button_height"
+            android:layout_margin="@dimen/crash_button_margin"
+            android:background="@drawable/bg_button_secondary"
+            android:textColor="@color/text_primary"
+            android:text="@string/crash_share" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/crash_screen_padding"
+        android:paddingEnd="@dimen/crash_screen_padding"
+        android:paddingBottom="@dimen/crash_screen_padding"
+        android:gravity="center">
+
+        <Button
+            android:id="@+id/btn_crash_continue"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="@dimen/crash_button_height"
+            android:layout_margin="@dimen/crash_button_margin"
+            android:background="@drawable/bg_button_primary"
+            android:textColor="@color/on_primary"
+            android:text="@string/crash_continue" />
+
+        <Button
+            android:id="@+id/btn_crash_clear"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="@dimen/crash_button_height"
+            android:layout_margin="@dimen/crash_button_margin"
+            android:background="@drawable/bg_button_secondary"
+            android:textColor="@color/text_primary"
+            android:text="@string/crash_delete" />
+
+        <Button
+            android:id="@+id/btn_crash_history"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="@dimen/crash_button_height"
+            android:layout_margin="@dimen/crash_button_margin"
+            android:background="@drawable/bg_button_secondary"
+            android:textColor="@color/text_primary"
+            android:text="@string/crash_history" />
+
+        <Button
+            android:id="@+id/btn_crash_test"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="@dimen/crash_button_height"
+            android:layout_margin="@dimen/crash_button_margin"
+            android:background="@drawable/bg_button_secondary"
+            android:textColor="@color/text_primary"
+            android:visibility="gone"
+            android:text="@string/crash_test_button" />
+    </LinearLayout>
+</LinearLayout>

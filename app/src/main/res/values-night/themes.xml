@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        DARK (night) variants of the app themes. The style declarations are the
+        same as values/themes.xml — the underlying @color references resolve to
+        the night palette automatically. Kept explicit so the project satisfies
+        the "res/values-night/themes.xml" requirement.
+    -->
+    <style name="Theme.PhonkDropEditor" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:navigationBarColor">@color/background</item>
+        <item name="android:statusBarColor">@color/background</item>
+        <item name="android:colorPrimary">@color/primary</item>
+        <item name="android:colorPrimaryDark">@color/secondary</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:colorBackground">@color/background</item>
+    </style>
+
+    <style name="Theme.PhonkCrash" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:statusBarColor">@color/background</item>
+        <item name="android:navigationBarColor">@color/background</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:colorPrimary">@color/primary</item>
+        <item name="android:colorPrimaryDark">@color/secondary</item>
+        <item name="android:colorButtonNormal">@color/surface_variant</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:colorBackground">@color/background</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

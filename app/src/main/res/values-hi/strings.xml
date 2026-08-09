@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Hindi translations for the crash reporting UI (values-hi). -->
+
+    <!-- Main app UI -->
+    <string name="app_title">Phonk Drop Editor</string>
+    <string name="open_video">वीडियो खोलें</string>
+    <string name="recent_projects">हाल की परियोजनाएँ</string>
+    <string name="editor_title">संपादक</string>
+    <string name="back">वापस</string>
+    <string name="analyze">विश्लेषण करें</string>
+    <string name="re_analyze">फिर से विश्लेषण करें</string>
+    <string name="export">निर्यात</string>
+    <string name="apply_cuts">कटौती लागू करें</string>
+    <string name="render">रेंडर करें</string>
+    <string name="export_title">निर्यात</string>
+    <string name="export_saved">सहेजा गया: %1$s</string>
+    <string name="export_progress">निर्यात हो रहा है… %1$d%%</string>
+    <string name="export_need_analysis">निर्यात से पहले वीडियो का विश्लेषण करें</string>
+    <string name="ok">ठीक है</string>
+    <string name="retry">फिर से प्रयास करें</string>
+    <string name="preview">पूर्वावलोकन</string>
+    <string name="analyze_idle">बीट ग्रिड बनाने के लिए विश्लेषण दबाएँ</string>
+    <string name="editor_analyzing">विश्लेषण %1$s %2$d%%</string>
+    <string name="editor_analyze_done">BPM %1$.1f  ड्रॉप %2$d  ड्रॉप-कॉन्फ %3$.2f</string>
+    <string name="resolution">रिज़ॉल्यूशन</string>
+    <string name="frame_rate">फ़्रेम दर</string>
+    <string name="video_codec">वीडियो कोडेक</string>
+    <string name="audio_bitrate">ऑडियो बिटरेट</string>
+    <string name="untitled">बिना शीर्षक</string>
+    <string name="home_duration_bpm">%1$s · %2$.1f BPM</string>
+    <string name="home_bpm">%1$.1f BPM</string>
+    <string name="home_not_analyzed">विश्लेषण नहीं किया गया</string>
+    <string name="home_beats_drops">%1$d बीट · %2$d ड्रॉप</string>
+    <string name="pattern_a">1 बीट = 1 कट</string>
+    <string name="pattern_b">2 बीट = 1 कट</string>
+    <string name="pattern_c">4 बीट = 1 कट</string>
+    <string name="pattern_d">8 बीट = 1 कट</string>
+    <string name="pattern_e_fast">फास्ट फोंक: 1/2 बीट कट्स</string>
+    <string name="pattern_f_drop">ड्रॉप जोर (पहले से टाइट)</string>
+
+    <!-- Settings -->
+    <string name="settings">सेटिंग्स</string>
+    <string name="theme">थीम</string>
+    <string name="language">भाषा</string>
+    <string name="theme_system">सिस्टम</string>
+    <string name="theme_light">लाइट</string>
+    <string name="theme_dark">डार्क</string>
+    <string name="language_system">सिस्टम</string>
+    <string name="language_english">English</string>
+    <string name="language_hindi">हिन्दी</string>
+
+    <string name="crash_title">ऐप क्रैश हो गया</string>
+    <string name="crash_subtitle">ऐप अप्रत्याशित रूप से बंद हो गया। क्रैश विवरण नीचे उपलब्ध है।</string>
+    <string name="crash_details_title">क्रैश विवरण</string>
+    <string name="crash_stack_trace">स्टैक ट्रेस</string>
+    <string name="crash_cause">कारण</string>
+    <string name="crash_history_title">क्रैश इतिहास</string>
+
+    <string name="crash_exception">अपवाद</string>
+    <string name="crash_message">संदेश</string>
+    <string name="crash_thread">थ्रेड</string>
+    <string name="crash_time">समय</string>
+    <string name="crash_app_version">ऐप संस्करण</string>
+    <string name="crash_android_version">एंड्रॉइड संस्करण</string>
+    <string name="crash_device">डिवाइस</string>
+
+    <string name="crash_label_exception">अपवाद:</string>
+    <string name="crash_label_message">संदेश:</string>
+    <string name="crash_label_thread">थ्रेड:</string>
+    <string name="crash_label_time">समय:</string>
+    <string name="crash_label_app_version">ऐप संस्करण:</string>
+    <string name="crash_label_android">एंड्रॉइड:</string>
+    <string name="crash_label_device">डिवाइस:</string>
+    <string name="crash_label_abi">एबीआई:</string>
+
+    <string name="crash_copy">क्रैश लॉग कॉपी करें</string>
+    <string name="crash_share">क्रैश लॉग साझा करें</string>
+    <string name="crash_delete">क्रैश लॉग साफ़ करें</string>
+    <string name="crash_continue">ऐप में जारी रखें</string>
+    <string name="crash_history">इतिहास</string>
+    <string name="crash_back">वापस</string>
+    <string name="crash_test_button">टेस्ट क्रैश</string>
+
+    <string name="crash_log_copied">क्रैश लॉग कॉपी किया गया</string>
+    <string name="crash_log_deleted">क्रैश लॉग हटा दिया गया</string>
+    <string name="crash_share_failed">क्रैश लॉग साझा नहीं किया जा सका</string>
+
+    <string name="crash_delete_title">क्या इस क्रैश रिपोर्ट को हटाएं?</string>
+    <string name="crash_delete_message">यह रिपोर्ट इस डिवाइस से हटा देगा। ऐप प्रभावित नहीं होगा।</string>
+    <string name="cancel">रद्द करें</string>
+    <string name="delete">हटाएं</string>
+
+    <string name="crash_no_logs">कोई क्रैश रिपोर्ट उपलब्ध नहीं है।</string>
+    <string name="crash_no_message">(कोई संदेश नहीं)</string>
+    <string name="crash_no_stack_trace">(कोई स्टैक ट्रेस नहीं)</string>
+    <string name="crash_unknown">अज्ञात</string>
+
+    <string name="crash_clipboard_label">क्रैश लॉग</string>
+    <string name="crash_share_chooser">क्रैश रिपोर्ट साझा करें</string>
+
+    <string name="test_crash_message">क्रैश रिपोर्टिंग प्रणाली से टेस्ट क्रैश</string>
+
+    <string name="crash_icon_content_description">ऐप क्रैश हो गया</string>
+    <string name="crash_stack_content_description">पूरा क्रैश स्टैक ट्रेस; पूरी रिपोर्ट कॉपी करने के लिए देर तक दबाएं</string>
+    <string name="crash_history_list_content_description">दर्ज किए गए क्रैश की सूची</string>
+
+    <string name="crash_version_format">%1$s (%2$s)</string>
+    <string name="crash_thread_with_id">%1$s (आईडी %2$d)</string>
+    <string name="crash_android_format">%1$s / एसडीके %2$d</string>
+    <string name="crash_device_format">%1$s %2$s</string>
+    <string name="crash_history_row_title">#%1$d %2$s</string>
+    <string name="crash_history_row_time">%1$s — %2$s</string>
+
+    <string name="crash_report_header">एप्प क्रैश रिपोर्ट</string>
+    <string name="crash_report_field">%1$s: %2$s</string>
+    <string name="crash_report_stack_trace">स्टैक ट्रेस</string>
+    <string name="crash_report_cause">कारण</string>
+    <string name="crash_report_process">प्रक्रिया</string>
+    <string name="crash_report_memory">मेमोरी</string>
+    <string name="crash_report_foreground">फ़ोरग्राउंड</string>
+    <string name="crash_report_debug">डिबग बिल्ड</string>
+    <string name="crash_report_abis">एबीआई</string>
+    <string name="crash_yes">हाँ</string>
+    <string name="crash_no">नहीं</string>
+    <string name="crash_true">सही</string>
+    <string name="crash_false">गलत</string>
+</resources>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        App theme — LIGHT variant. Every color here points at the centralized
+        color palette (values/colors.xml) so dark mode switches automatically
+        via values-night/colors.xml. No Material 3, no Compose dependency.
+    -->
+    <style name="Theme.PhonkDropEditor" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:navigationBarColor">@color/background</item>
+        <item name="android:statusBarColor">@color/background</item>
+        <item name="android:colorPrimary">@color/primary</item>
+        <item name="android:colorPrimaryDark">@color/secondary</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:colorBackground">@color/background</item>
+    </style>
+
+    <!--
+        Minimal, self-contained theme for the crash screens. These activities
+        must stay as simple and stable as possible, so they intentionally do
+        NOT depend on AppCompat/Compose frameworks. Colors switch automatically
+        between light and dark via values-night/colors.xml.
+    -->
+    <style name="Theme.PhonkCrash" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:statusBarColor">@color/background</item>
+        <item name="android:navigationBarColor">@color/background</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:colorPrimary">@color/primary</item>
+        <item name="android:colorPrimaryDark">@color/secondary</item>
+        <item name="android:colorButtonNormal">@color/surface_variant</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:colorBackground">@color/background</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>
