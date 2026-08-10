@@ -174,9 +174,10 @@ fun evaluateColorGrade(
 ): ColorGrade {
     if (!enabled || keyframes.size < 2) return base
     val sorted = keyframes.sortedBy { it.atMs }
-    if (destMs <= sorted.first().atMs) return sorted.first().grade
+    val first = sorted.first()
     val last = sorted.last()
-    if (destMs >= last.atMs) return last.grade
+    // Outside the keyframe span the static base grade stays active.
+    if (destMs < first.atMs || destMs > last.atMs) return base
     for (i in 0 until sorted.lastIndex) {
         val a = sorted[i]
         val b = sorted[i + 1]
