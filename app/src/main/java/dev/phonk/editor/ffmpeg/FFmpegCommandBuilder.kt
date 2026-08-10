@@ -294,7 +294,6 @@ object FFmpegCommandBuilder {
     private fun appendColorGrade(sb: StringBuilder, colorGrade: ColorGrade?, enableExpr: String? = null) {
         if (colorGrade == null) return
         val en = if (enableExpr != null) ":enable='$enableExpr'" else ""
-        var emitted = false
         val brightness = colorGrade.brightness + colorGrade.exposure * 0.5f
         val ct0 = 1.0 + colorGrade.contrast * 0.6 + colorGrade.highlights * 0.15
         val ct = ct0.coerceIn(0.4, 1.9)
@@ -316,29 +315,26 @@ object FFmpegCommandBuilder {
                 .append(":gamma_r=").append(fmt(gammaR))
                 .append(":gamma_g=").append(fmt(gammaG))
                 .append(":gamma_b=").append(fmt(gammaB))
-            emitted = true
+                .append(en)
         }
         if (abs(colorGrade.blur) > 0.0005f) {
             val r = (colorGrade.blur * 8.0 + 0.5).coerceAtMost(20.0)
             sb.append(",boxblur=luma_radius=").append(fmt(r)).append(":luma_power=1")
-            emitted = true
+                .append(en)
         }
         if (abs(colorGrade.vignette) > 0.0005f) {
             val angle = (Math.PI / 5.0 * (1.0 - colorGrade.vignette * 0.8)).coerceIn(Math.PI / 18.0, Math.PI / 2.0)
             sb.append(",vignette=angle=").append(fmt(angle))
-            emitted = true
+                .append(en)
         }
         if (abs(colorGrade.grain) > 0.0005f) {
             sb.append(",noise=alls=").append(fmt(colorGrade.grain * 26.0)).append(":allf=t+u")
-            emitted = true
+                .append(en)
         }
         if (abs(colorGrade.sharpness) > 0.0005f) {
             sb.append(",unsharp=luma_msize_x=5:luma_msize_y=5:luma_amount=")
                 .append(fmt((colorGrade.sharpness * 0.6).toDouble()))
-            emitted = true
-        }
-        if (emitted && en.isNotEmpty()) {
-            sb.append(en)
+                .append(en)
         }
     }
 
