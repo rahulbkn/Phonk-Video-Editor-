@@ -15,6 +15,7 @@ import dev.phonk.editor.ffmpeg.FFmpegEngine
 import dev.phonk.editor.ffmpeg.FfmpegRenderer
 import dev.phonk.editor.ffmpeg.OverlayRender
 import dev.phonk.editor.ffmpeg.ProcessFFmpegEngine
+import dev.phonk.editor.ffmpeg.RenderCancellable
 import dev.phonk.editor.ffmpeg.RenderState
 import dev.phonk.editor.model.AnalysisResult
 import dev.phonk.editor.model.ClipSegment
@@ -54,7 +55,17 @@ class ExportRunner(
     private val _state = MutableStateFlow<ExportState>(ExportState.Idle)
     val state: StateFlow<ExportState> = _state.asStateFlow()
 
+    @Volatile
     var cancelRequested = false
+
+    /**
+     * The renderer of the export currently in flight, if any. Set as soon as a
+     * renderer is created and cleared when that export finishes, so a cancel
+     * can signal the live ffmpeg process instead of only flagging a later
+     * post-render check.
+     */
+    @Volatile
+    internal var activeRenderer: RenderCancellable? = null
 
     /** Clears any previous result so the dialog starts fresh. */
     fun reset() {
@@ -64,6 +75,7 @@ class ExportRunner(
     /** Requests cancellation of an in-flight export. */
     fun cancel() {
         cancelRequested = true
+        activeRenderer?.cancel()
     }
 
     /** Reports a failure from outside the export pipeline (e.g. missing inputs). */
@@ -142,42 +154,62 @@ class ExportRunner(
                     return@runCatching
                 }
                 val renderer = FfmpegRenderer(engine)
-
-                // stage 2: render to internal cache
-                val outFile = File(context.cacheDir, "phonk_export_${System.currentTimeMillis()}.mp4")
-                val overlayRenders = buildOverlayRenders(project, config)
-                val completed = renderer.render(
-                    input = inputPath(videoUri),
-                    output = outFile.absolutePath,
-                    segments = clips,
-                    config = config,
-                    hasAudio = true,
-                    effects = allEffects,
-                    hwEncode = if (config.hardwareAccel) "h264" else null,
-                    videoDurationMs = clips.map { it.destEndMs }.maxOrNull() ?: 0L,
-                    onProgress = { p ->
-                        _state.value = ExportState.Running(p, "rendering")
-                    },
-                    colorGrade = project.colorGrade(),
-                    overlayRenders = overlayRenders,
-                    transitionDurationMs = project.transitionDurationMs,
-                    keyframes = project.gradeKeyframes,
-                    keyframesEnabled = project.gradeKeyframesEnabled,
-                )
-                if (cancelRequested) {
-                    outFile.delete()
-                    _state.value = ExportState.Idle
-                    return@runCatching
-                }
-                when (completed) {
-                    is RenderState.Failed -> { Log.e(TAG, "export FAILED: " + completed.message); _state.value = ExportState.Failed(completed.message) }
-                    is RenderState.Done -> {
-                        Log.i(TAG, "export render done")
-                        _state.value = ExportState.Running(0.9f, "saving")
-                        val uri = saveToGallery(context, outFile, config)
-                        _state.value = ExportState.Done(uri, outFile.absolutePath)
+                activeRenderer = renderer
+                try {
+                    // stage 2: render to internal cache
+                    val outFile = File(context.cacheDir, "phonk_export_${System.currentTimeMillis()}.mp4")
+                    val overlayRenders = buildOverlayRenders(project, config)
+                    // A cancel that arrived before the renderer was created must
+                    // still prevent the render from ever starting.
+                    if (cancelRequested) {
+                        outFile.delete()
+                        _state.value = ExportState.Idle
+                        return@runCatching
                     }
-                    is RenderState.Running, is RenderState.Idle -> Unit
+                    val completed = renderer.render(
+                        input = inputPath(videoUri),
+                        output = outFile.absolutePath,
+                        segments = clips,
+                        config = config,
+                        hasAudio = true,
+                        effects = allEffects,
+                        hwEncode = if (config.hardwareAccel) "h264" else null,
+                        videoDurationMs = clips.map { it.destEndMs }.maxOrNull() ?: 0L,
+                        onProgress = { p ->
+                            _state.value = ExportState.Running(p, "rendering")
+                        },
+                        colorGrade = project.colorGrade(),
+                        overlayRenders = overlayRenders,
+                        transitionDurationMs = project.transitionDurationMs,
+                        keyframes = project.gradeKeyframes,
+                        keyframesEnabled = project.gradeKeyframesEnabled,
+                    )
+                    if (cancelRequested) {
+                        outFile.delete()
+                        _state.value = ExportState.Idle
+                        return@runCatching
+                    }
+                    when (completed) {
+                        is RenderState.Failed -> { Log.e(TAG, "export FAILED: " + completed.message); _state.value = ExportState.Failed(completed.message) }
+                        is RenderState.Done -> {
+                            Log.i(TAG, "export render done")
+                            // A completion racing a late cancel must not
+                            // resurrect a Done state.
+                            if (cancelRequested) {
+                                outFile.delete()
+                                _state.value = ExportState.Idle
+                                return@runCatching
+                            }
+                            _state.value = ExportState.Running(0.9f, "saving")
+                            val uri = saveToGallery(context, outFile, config)
+                            _state.value = ExportState.Done(uri, outFile.absolutePath)
+                        }
+                        is RenderState.Running, is RenderState.Idle -> Unit
+                    }
+                } finally {
+                    // Only clear our own reference; a newer export may already
+                    // have registered a fresh renderer.
+                    if (activeRenderer === renderer) activeRenderer = null
                 }
             }.onFailure { t ->
                 Log.e(TAG, "export FAILED", t)

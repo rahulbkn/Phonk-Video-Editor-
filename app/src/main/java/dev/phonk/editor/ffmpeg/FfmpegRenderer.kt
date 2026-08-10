@@ -30,6 +30,11 @@ interface FFmpegEngine {
     fun run(args: List<String>, cancel: AtomicBoolean, onNewSecond: (Float) -> Unit)
 }
 
+/** Minimal cancellation contract implemented by an active renderer. */
+interface RenderCancellable {
+    fun cancel()
+}
+
 /** Executes ffmpeg as a subprocess with an argv array (no shell involved). */
 class ProcessFFmpegEngine(private val binaryPath: String) : FFmpegEngine {
     override val available: Boolean = true
@@ -92,14 +97,14 @@ class ProcessFFmpegEngine(private val binaryPath: String) : FFmpegEngine {
  * Orchestrates a single-invocation render. Streams progress and supports
  * cancellation; never blocks a caller thread (runs on Dispatchers.IO).
  */
-class FfmpegRenderer(private val engine: FFmpegEngine) {
+class FfmpegRenderer(private val engine: FFmpegEngine) : RenderCancellable {
 
     private val _state = MutableStateFlow<RenderState>(RenderState.Idle)
     val state: StateFlow<RenderState> = _state.asStateFlow()
 
     private val cancelFlag = AtomicBoolean(false)
 
-    fun cancel() {
+    override fun cancel() {
         cancelFlag.set(true)
     }
 
