@@ -157,12 +157,21 @@ fun EditorPreview(
     val imageCache = remember { mutableStateMapOf<String, ImageBitmap>() }
     val totalMs = project?.videoDurationMs ?: 0L
 
-    val fxPhase by rememberInfiniteTransition(label = "fx").animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
-        label = "fxPhase",
-    )
+    // Only run the continuous animation clock while actually playing AND when
+    // something on-screen animates (an animated clip effect, grade keyframes,
+    // beat-sync, or grain flicker). Paused/idle projects get a pinned phase so
+    // the whole preview subtree does not recompose at 60fps.
+    val fxPhase = if (previewNeedsAnimation(project, isPlaying, destPlayheadMs)) {
+        val transition = rememberInfiniteTransition(label = "fx")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
+            label = "fxPhase",
+        ).value
+    } else {
+        0f
+    }
     val frame = computeFxFrame(project, destPlayheadMs, positionMs, fxPhase)
 
     BoxWithConstraints(
@@ -356,6 +365,33 @@ fun EditorPreview(
     }
 }
 
+/** Clip effects whose live preview continuously animates (consume the phase clock). */
+private val EffectKind.isAnimatedEffect: Boolean
+    get() = this == EffectKind.GLITCH || this == EffectKind.SHAKE ||
+        this == EffectKind.ZOOM || this == EffectKind.RGBSPLIT
+
+/**
+ * Decides whether the live preview needs its continuous animation clock.
+ * Returns true only while [isPlaying] and something on-screen actually
+ * animates: an animated clip effect (glitch/shake/zoom/rgbsplit), animated
+ * grade keyframes, beat-sync, or grain flicker. While paused (or with nothing
+ * animated) the phase is pinned to 0f so the preview subtree never recomposes
+ * at 60fps.
+ */
+internal fun previewNeedsAnimation(
+    project: PhonkProject?,
+    isPlaying: Boolean,
+    destMs: Long,
+): Boolean {
+    if (project == null || !isPlaying) return false
+    if (project.beatSync) return true
+    if (project.gradeKeyframesEnabled && project.gradeKeyframes.size >= 2) return true
+    if (project.grain > 0f) return true
+    return project.clips.any { clip ->
+        clip.effect.isAnimatedEffect && destMs in clip.destStartMs until clip.destEndMs
+    }
+}
+
 /** Composes the live visual frame from project grade + the active clip effect.
  *  [destMs] drives clip effects/keyframes; [sourceMs] drives the beat engine
  *  (beat markers are in media/source time). */
@@ -418,6 +454,24 @@ private fun computeFxFrame(
     return frame
 }
 
+/** Cache key for the compiled color/render effect (the params that can change it). */
+private data class RenderEffectKey(
+    val grade: ColorGrade,
+    val effect: EffectKind,
+    val strength: Float,
+    val beatSyncStrength: Float,
+)
+
+/**
+ * Reuses the compiled RenderEffect whenever the affecting params are unchanged,
+ * so playback does not allocate a fresh ColorMatrix + RenderEffect every frame.
+ * Bounded LRU keeps memory in check; RenderEffect is safe to share across views.
+ */
+private val renderEffectCache = object : LinkedHashMap<RenderEffectKey, RenderEffect?>(16, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<RenderEffectKey, RenderEffect?>): Boolean =
+        size > 24
+}
+
 /**
  * Builds an Android color/render effect matching the export grade. One
  * combined color matrix (saturation -> contrast -> brightness -> temperature
@@ -431,6 +485,8 @@ private fun buildRenderEffect(
     beatSyncStrength: Float,
 ): RenderEffect? {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
+    val key = RenderEffectKey(grade, effect, strength, beatSyncStrength)
+    if (renderEffectCache.containsKey(key)) return renderEffectCache[key]
     var b = grade.brightness + grade.exposure * 0.5f
     var c = grade.contrast + grade.highlights * 0.15f
     var s = grade.saturation * (1f - grade.fade * 0.5f)
@@ -446,6 +502,7 @@ private fun buildRenderEffect(
         abs(grade.temperature) < 0.001f && abs(grade.tint) < 0.001f &&
         grade.blur < 0.001f
     ) {
+        renderEffectCache[key] = null
         return null
     }
     val cm = ColorMatrix()
@@ -477,12 +534,14 @@ private fun buildRenderEffect(
 
     val colorFx = RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(cm))
     val blurRadius = grade.blur * 16f
-    return if (blurRadius >= 0.5f) {
+    val result = if (blurRadius >= 0.5f) {
         val blur = RenderEffect.createBlurEffect(blurRadius, blurRadius, Shader.TileMode.CLAMP)
         RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(cm), blur)
     } else {
         colorFx
     }
+    renderEffectCache[key] = result
+    return result
 }
 
 @Composable
