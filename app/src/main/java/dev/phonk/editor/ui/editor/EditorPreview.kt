@@ -147,6 +147,7 @@ fun EditorPreview(
     onOverlayTransformBegin: () -> Unit,
     onOverlayTransformLive: (String, Float, Float, Float, Float, Float, Float) -> Unit,
     onOverlayTransformEnd: () -> Unit,
+    onOverlayTransformCancel: () -> Unit,
     onEditText: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -262,6 +263,7 @@ fun EditorPreview(
                 onOverlayTransformBegin = onOverlayTransformBegin,
                 onOverlayTransformLive = onOverlayTransformLive,
                 onOverlayTransformEnd = onOverlayTransformEnd,
+                onOverlayTransformCancel = onOverlayTransformCancel,
                 onEditText = onEditText,
             )
         }
@@ -566,6 +568,7 @@ private fun BoxScope.ProjectOverlays(
     onOverlayTransformBegin: () -> Unit,
     onOverlayTransformLive: (String, Float, Float, Float, Float, Float, Float) -> Unit,
     onOverlayTransformEnd: () -> Unit,
+    onOverlayTransformCancel: () -> Unit,
     onEditText: (String) -> Unit,
 ) {
     if (project == null) return
@@ -700,6 +703,7 @@ private fun BoxScope.ProjectOverlays(
             onTransformBegin = onOverlayTransformBegin,
             onTransformLive = onOverlayTransformLive,
             onTransformEnd = onOverlayTransformEnd,
+            onTransformCancel = onOverlayTransformCancel,
             onEditText = onEditText,
         )
 

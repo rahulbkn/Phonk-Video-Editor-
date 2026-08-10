@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import dev.phonk.editor.model.OverlayFx
 import dev.phonk.editor.model.OverlayItem
 import dev.phonk.editor.model.evaluateOverlayFx
+import kotlinx.coroutines.CancellationException
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -104,6 +105,7 @@ fun BoxScope.OverlayEditorLayer(
     onTransformBegin: () -> Unit,
     onTransformLive: (id: String, x: Float, y: Float, sx: Float, sy: Float, rot: Float, op: Float) -> Unit,
     onTransformEnd: () -> Unit,
+    onTransformCancel: () -> Unit,
     onEditText: (String) -> Unit,
 ) {
     val activeItemsState = rememberUpdatedState(activeItems)
@@ -116,6 +118,7 @@ fun BoxScope.OverlayEditorLayer(
     val onBeginState = rememberUpdatedState(onTransformBegin)
     val onLiveState = rememberUpdatedState(onTransformLive)
     val onEndState = rememberUpdatedState(onTransformEnd)
+    val onCancelState = rememberUpdatedState(onTransformCancel)
     val onEditState = rememberUpdatedState(onEditText)
 
     var snapV by remember { mutableStateOf<Float?>(null) }
@@ -242,109 +245,123 @@ fun BoxScope.OverlayEditorLayer(
                         onLiveState.value(hitItem.id, live.x, live.y, live.sx, live.sy, live.rot, live.op)
                     }
 
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val pressed = event.changes.filter { it.pressed }
-                        if (pressed.isEmpty()) break
+                    // Cancellation-safe gesture loop: if the pointer-input
+                    // coroutine is killed mid-drag (navigation away,
+                    // recomposition, the editor leaving composition) the normal
+                    // on-end path below never runs. Tell the ViewModel to clear
+                    // its stale pre-gesture snapshot so a later gesture cannot
+                    // seal an undo entry rooted at an arbitrarily old project.
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val pressed = event.changes.filter { it.pressed }
+                            if (pressed.isEmpty()) break
 
-                        val curFirst = pressed.firstOrNull { it.id == id0 } ?: pressed.first()
-                        val prev0 = p0
-                        p0 = curFirst.position
-                        totalMove += dist(p0, prev0)
+                            val curFirst = pressed.firstOrNull { it.id == id0 } ?: pressed.first()
+                            val prev0 = p0
+                            p0 = curFirst.position
+                            totalMove += dist(p0, prev0)
 
-                        // a second finger appeared -> enter pinch mode (rebaseline)
-                        if (!twoFinger && pressed.size >= 2) {
-                            val second = pressed.first { it.id != id0 }
-                            id1 = second.id
-                            p1 = second.position
-                            base = GestureLive(live.x, live.y, live.sx, live.sy, live.rot, live.op)
-                            focal0 = Offset((p0.x + p1.x) / 2f, (p0.y + p1.y) / 2f)
-                            dist0 = dist(p0, p1)
-                            angle0 = angleDeg(focal0, p1)
-                            twoFinger = true
-                        }
-                        if (twoFinger) {
-                            val stillTwo = pressed.firstOrNull { it.id == id1 }
-                            if (stillTwo != null) {
-                                p1 = stillTwo.position
-                                val f = Offset((p0.x + p1.x) / 2f, (p0.y + p1.y) / 2f)
-                                val d = dist(p0, p1)
-                                val a = angleDeg(f, p1)
-                                val zoom = if (dist0 > 1f) d / dist0 else 1f
-                                val rotDelta = a - angle0
-                                live.x = (base.x + (f.x - focal0.x) / boxW).coerceIn(-2f, 3f)
-                                live.y = (base.y + (f.y - focal0.y) / boxH).coerceIn(-2f, 3f)
-                                live.sx = (base.sx * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
-                                live.sy = (base.sy * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
-                                live.rot = base.rot + rotDelta
-                                emit()
-                                moved = true
-                                curFirst.consume()
-                                stillTwo.consume()
+                            // a second finger appeared -> enter pinch mode (rebaseline)
+                            if (!twoFinger && pressed.size >= 2) {
+                                val second = pressed.first { it.id != id0 }
+                                id1 = second.id
+                                p1 = second.position
+                                base = GestureLive(live.x, live.y, live.sx, live.sy, live.rot, live.op)
+                                focal0 = Offset((p0.x + p1.x) / 2f, (p0.y + p1.y) / 2f)
+                                dist0 = dist(p0, p1)
+                                angle0 = angleDeg(focal0, p1)
+                                twoFinger = true
+                            }
+                            if (twoFinger) {
+                                val stillTwo = pressed.firstOrNull { it.id == id1 }
+                                if (stillTwo != null) {
+                                    p1 = stillTwo.position
+                                    val f = Offset((p0.x + p1.x) / 2f, (p0.y + p1.y) / 2f)
+                                    val d = dist(p0, p1)
+                                    val a = angleDeg(f, p1)
+                                    val zoom = if (dist0 > 1f) d / dist0 else 1f
+                                    val rotDelta = a - angle0
+                                    live.x = (base.x + (f.x - focal0.x) / boxW).coerceIn(-2f, 3f)
+                                    live.y = (base.y + (f.y - focal0.y) / boxH).coerceIn(-2f, 3f)
+                                    live.sx = (base.sx * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
+                                    live.sy = (base.sy * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
+                                    live.rot = base.rot + rotDelta
+                                    emit()
+                                    moved = true
+                                    curFirst.consume()
+                                    stillTwo.consume()
+                                } else {
+                                    // fell back to one finger; keep dragging as a move
+                                    twoFinger = false
+                                    downDelta = Offset(downPos.x - p0.x, downPos.y - p0.y)
+                                    distToCenter0 = dist(p0, center0)
+                                }
                             } else {
-                                // fell back to one finger; keep dragging as a move
-                                twoFinger = false
-                                downDelta = Offset(downPos.x - p0.x, downPos.y - p0.y)
-                                distToCenter0 = dist(p0, center0)
+                                when (hitMode) {
+                                    GestureMode.MOVE -> {
+                                        val dx = p0.x - downPos.x
+                                        val dy = p0.y - downPos.y
+                                        var nx = live.x + (dx - downDelta.x) / boxW
+                                        var ny = live.y + (dy - downDelta.y) / boxH
+                                        downDelta = Offset(dx, dy)
+                                        // safe bounds: keep at least ~20% of the item visible
+                                        nx = nx.coerceIn(-(halfW * 0.8f) / boxW, 1f + (halfW * 0.8f) / boxW)
+                                        ny = ny.coerceIn(-(halfH * 0.8f) / boxH, 1f + (halfH * 0.8f) / boxH)
+                                        // snap guides
+                                        val cxp = nx * boxW
+                                        val cyp = ny * boxH
+                                        snapV = null
+                                        snapH = null
+                                        if (abs(cxp - boxW / 2f) < SNAP_DIST_PX) { nx = 0.5f; snapV = boxW / 2f }
+                                        else if (abs(cxp - halfW) < SNAP_DIST_PX) { nx = halfW / boxW; snapV = halfW }
+                                        else if (abs((boxW - cxp) - halfW) < SNAP_DIST_PX) { nx = 1f - halfW / boxW; snapV = boxW - halfW }
+                                        if (abs(cyp - boxH / 2f) < SNAP_DIST_PX) { ny = 0.5f; snapH = boxH / 2f }
+                                        else if (abs(cyp - halfH) < SNAP_DIST_PX) { ny = halfH / boxH; snapH = halfH }
+                                        else if (abs((boxH - cyp) - halfH) < SNAP_DIST_PX) { ny = 1f - halfH / boxH; snapH = boxH - halfH }
+                                        live.x = nx
+                                        live.y = ny
+                                        emit()
+                                        moved = true
+                                    }
+                                    GestureMode.RESIZE -> {
+                                        val d = dist(p0, Offset(live.x * boxW, live.y * boxH))
+                                        val factor = if (distToCenter0 > 1f) d / distToCenter0 else 1f
+                                        val s = (live.sx * factor).coerceIn(MIN_SCALE, MAX_SCALE)
+                                        live.sx = s
+                                        live.sy = s
+                                        distToCenter0 = d
+                                        emit()
+                                        moved = true
+                                    }
+                                    GestureMode.ROTATE -> {
+                                        val a = angleDeg(Offset(live.x * boxW, live.y * boxH), p0)
+                                        var newRot = live.rot + (a - handleAngle0)
+                                        // snap to useful angles
+                                        val snapAngles = listOf(-180f, -90f, 0f, 90f, 180f, 270f)
+                                        val snapped = snapAngles.firstOrNull { abs(it - newRot) < 8f }
+                                        if (snapped != null) newRot = snapped
+                                        live.rot = newRot
+                                        handleAngle0 = a
+                                        emit()
+                                        moved = true
+                                    }
+                                    else -> Unit
+                                }
+                                curFirst.consume()
                             }
-                        } else {
-                            when (hitMode) {
-                                GestureMode.MOVE -> {
-                                    val dx = p0.x - downPos.x
-                                    val dy = p0.y - downPos.y
-                                    var nx = live.x + (dx - downDelta.x) / boxW
-                                    var ny = live.y + (dy - downDelta.y) / boxH
-                                    downDelta = Offset(dx, dy)
-                                    // safe bounds: keep at least ~20% of the item visible
-                                    nx = nx.coerceIn(-(halfW * 0.8f) / boxW, 1f + (halfW * 0.8f) / boxW)
-                                    ny = ny.coerceIn(-(halfH * 0.8f) / boxH, 1f + (halfH * 0.8f) / boxH)
-                                    // snap guides
-                                    val cxp = nx * boxW
-                                    val cyp = ny * boxH
-                                    snapV = null
-                                    snapH = null
-                                    if (abs(cxp - boxW / 2f) < SNAP_DIST_PX) { nx = 0.5f; snapV = boxW / 2f }
-                                    else if (abs(cxp - halfW) < SNAP_DIST_PX) { nx = halfW / boxW; snapV = halfW }
-                                    else if (abs((boxW - cxp) - halfW) < SNAP_DIST_PX) { nx = 1f - halfW / boxW; snapV = boxW - halfW }
-                                    if (abs(cyp - boxH / 2f) < SNAP_DIST_PX) { ny = 0.5f; snapH = boxH / 2f }
-                                    else if (abs(cyp - halfH) < SNAP_DIST_PX) { ny = halfH / boxH; snapH = halfH }
-                                    else if (abs((boxH - cyp) - halfH) < SNAP_DIST_PX) { ny = 1f - halfH / boxH; snapH = boxH - halfH }
-                                    live.x = nx
-                                    live.y = ny
-                                    emit()
-                                    moved = true
-                                }
-                                GestureMode.RESIZE -> {
-                                    val d = dist(p0, Offset(live.x * boxW, live.y * boxH))
-                                    val factor = if (distToCenter0 > 1f) d / distToCenter0 else 1f
-                                    val s = (live.sx * factor).coerceIn(MIN_SCALE, MAX_SCALE)
-                                    live.sx = s
-                                    live.sy = s
-                                    distToCenter0 = d
-                                    emit()
-                                    moved = true
-                                }
-                                GestureMode.ROTATE -> {
-                                    val a = angleDeg(Offset(live.x * boxW, live.y * boxH), p0)
-                                    var newRot = live.rot + (a - handleAngle0)
-                                    // snap to useful angles
-                                    val snapAngles = listOf(-180f, -90f, 0f, 90f, 180f, 270f)
-                                    val snapped = snapAngles.firstOrNull { abs(it - newRot) < 8f }
-                                    if (snapped != null) newRot = snapped
-                                    live.rot = newRot
-                                    handleAngle0 = a
-                                    emit()
-                                    moved = true
-                                }
-                                else -> Unit
-                            }
-                            curFirst.consume()
                         }
-                    }
 
-                    snapV = null
-                    snapH = null
-                    onEndState.value()
+                        snapV = null
+                        snapH = null
+                        onEndState.value()
+                    } catch (e: CancellationException) {
+                        if (began) onCancelState.value()
+                        throw e
+                    } finally {
+                        snapV = null
+                        snapH = null
+                    }
 
                     if (!moved && totalMove < with(density) { TAP_SLOP_DP.dp.toPx() }) {
                         // tap: track double-tap on the same text overlay
