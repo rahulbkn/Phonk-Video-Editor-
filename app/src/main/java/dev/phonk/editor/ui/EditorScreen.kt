@@ -276,6 +276,7 @@ fun EditorScreen(
                 vm.transformOverlayLive(id, x, y, sx, sy, rot, op)
             },
             onOverlayTransformEnd = { vm.endOverlayTransform() },
+            onOverlayTransformCancel = { vm.cancelOverlayTransform() },
             onEditText = { editOverlayId = it },
             modifier = Modifier
                 .fillMaxWidth()

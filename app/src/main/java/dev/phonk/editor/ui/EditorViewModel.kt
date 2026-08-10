@@ -64,8 +64,8 @@ class EditorViewModel(
     private val _selectedOverlayId = MutableStateFlow<String?>(null)
     val selectedOverlayId: StateFlow<String?> = _selectedOverlayId.asStateFlow()
 
-    /** Project state captured at the start of a drag gesture (one undo entry). */
-    private var overlayGestureStart: PhonkProject? = null
+    /** Tracks the pre-gesture snapshot + liveness for the current overlay drag. */
+    private val overlayGesture = OverlayGestureTracker()
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -125,6 +125,7 @@ class EditorViewModel(
     }
 
     fun setProject(p: PhonkProject) {
+        overlayGesture.reset()
         _project.value = p
         if (p.beats.isNotEmpty()) {
             _analysis.value = AnalysisResult(
@@ -467,6 +468,7 @@ class EditorViewModel(
     }
 
     fun selectOverlay(id: String?) {
+        overlayGesture.reset()
         _selectedOverlayId.value = id
     }
 
@@ -480,7 +482,8 @@ class EditorViewModel(
 
     /** Marks the start of a transform gesture so it becomes ONE undo step. */
     fun beginOverlayGesture() {
-        overlayGestureStart = _project.value
+        val p = _project.value ?: return
+        overlayGesture.begin(p)
     }
 
     /**
@@ -489,6 +492,7 @@ class EditorViewModel(
      * a single undo step and persists once.
      */
     fun transformOverlayLive(id: String, x: Float, y: Float, sx: Float, sy: Float, rot: Float, opacity: Float) {
+        overlayGesture.markDirty()
         _project.update { p ->
             p?.let { applyOverlayItem(it, id) { it.withTransform(x, y, sx, sy, rot, opacity) } }
         }
@@ -496,12 +500,22 @@ class EditorViewModel(
 
     /** Seals the active gesture: one undo entry (from before the gesture) + persist. */
     fun endOverlayTransform() {
-        val before = overlayGestureStart ?: return
+        val before = overlayGesture.end() ?: return
         val after = _project.value ?: return
-        overlayGestureStart = null
         _project.value = editEngine.apply(before) { after }
         refreshUndoState()
         persist()
+    }
+
+    /**
+     * Aborts the active gesture WITHOUT an undo entry and clears the stale
+     * pre-gesture snapshot. Called from the overlay editor's cancellation path
+     * (ACTION_CANCEL / pointer coroutine cancelled mid-drag by navigation away,
+     * recomposition or the editor leaving composition), where the normal
+     * on-end path never runs.
+     */
+    fun cancelOverlayTransform() {
+        overlayGesture.cancel()
     }
 
     /** Committed (single-step) transform update — for buttons/handles, not drags. */
@@ -660,6 +674,7 @@ class EditorViewModel(
 
     fun undo() {
         val p = _project.value ?: return
+        overlayGesture.reset()
         _project.value = editEngine.undo(p)
         refreshUndoState()
         persist()
@@ -667,6 +682,7 @@ class EditorViewModel(
 
     fun redo() {
         val p = _project.value ?: return
+        overlayGesture.reset()
         _project.value = editEngine.redo(p)
         refreshUndoState()
         persist()
@@ -832,4 +848,59 @@ class EditorViewModel(
                 )
             } else it
         }
+}
+
+/**
+ * Tracks the pre-gesture project snapshot for a single overlay transform drag.
+ *
+ * A completed gesture produces EXACTLY ONE undo entry: [end] returns the
+ * pre-gesture snapshot once and clears all state. A cancelled gesture (the
+ * overlay editor's pointer-input coroutine is killed mid-drag by navigation
+ * away, recomposition or leaving composition, so the on-end path never runs)
+ * must NEVER create an undo entry and MUST clear the stale snapshot — otherwise
+ * a later gesture (even a plain tap) would seal an undo entry rooted at an
+ * arbitrarily old project. Pure Kotlin so it is unit-testable without Android.
+ */
+internal class OverlayGestureTracker {
+
+    private var start: PhonkProject? = null
+    private var active = false
+    private var dirty = false
+
+    /** Captures the pre-gesture snapshot at the start of a drag. */
+    fun begin(before: PhonkProject) {
+        start = before
+        active = true
+        dirty = false
+    }
+
+    /** Records that a live transform actually fired during the gesture. */
+    fun markDirty() {
+        dirty = true
+    }
+
+    /**
+     * Seals a completed gesture: returns the pre-gesture snapshot exactly once
+     * (the caller pushes one undo entry), or null when no transform gesture was
+     * actually in progress. A stale snapshot left by a previously cancelled
+     * gesture is never allowed to become an undo entry.
+     */
+    fun end(): PhonkProject? {
+        val before = start
+        val seal = active && dirty && before != null
+        reset()
+        return if (seal) before else null
+    }
+
+    /** Discards a cancelled gesture. Never produces an undo entry. */
+    fun cancel() {
+        reset()
+    }
+
+    /** Defensive reset on project/selection change. */
+    fun reset() {
+        start = null
+        active = false
+        dirty = false
+    }
 }
