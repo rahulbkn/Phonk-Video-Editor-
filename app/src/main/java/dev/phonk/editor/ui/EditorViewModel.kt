@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.media3.common.Player
 import dev.phonk.editor.analysis.AnalysisManager
 import dev.phonk.editor.analysis.AnalysisState
 import dev.phonk.editor.editor.CutPattern
@@ -80,7 +81,15 @@ class EditorViewModel(
     val player: PlayerController = PlayerController(app)
 
     init {
-        player.onEnded = { _isPlaying.value = false }
+        player.onEnded = {
+            val d = playPauseDecision(
+                playbackState = Player.STATE_ENDED,
+                playWhenReady = player.player.playWhenReady,
+                isPlaying = player.player.isPlaying,
+                playPauseToggled = false,
+            )
+            _isPlaying.value = d.newIsPlaying
+        }
         viewModelScope.launch {
             analysisManager.state.collect { s ->
                 if (s is AnalysisState.Done) {
@@ -791,13 +800,21 @@ class EditorViewModel(
     }
 
     fun playPause() {
-        if (player.player.isPlaying) {
-            player.pause()
-            _isPlaying.value = false
-        } else {
-            player.play()
-            _isPlaying.value = true
+        val d = playPauseDecision(
+            playbackState = player.player.playbackState,
+            playWhenReady = player.player.playWhenReady,
+            isPlaying = player.player.isPlaying,
+            playPauseToggled = true,
+        )
+        if (d.shouldSeekToZero) {
+            player.player.seekTo(0L)
         }
+        if (d.newIsPlaying) {
+            player.play()
+        } else {
+            player.pause()
+        }
+        _isPlaying.value = d.newIsPlaying
     }
 
     /** Syncs the timeline playhead with the preview (called on a timer).
@@ -832,4 +849,47 @@ class EditorViewModel(
                 )
             } else it
         }
+}
+
+/** Outcome of a play/pause toggle (or player-state sync) for the preview. */
+data class PlayPauseDecision(
+    /** True when playback must be seeked back to the start before resuming. */
+    val shouldSeekToZero: Boolean,
+    /** The `_isPlaying` UI flag the caller must adopt. */
+    val newIsPlaying: Boolean,
+)
+
+/**
+ * Pure, JVM-testable decision for the preview play/pause behavior.
+ *
+ * [playPauseToggled] is true when the user pressed play/pause, false when this
+ * is a player-state notification (e.g. playback reached the end).
+ *
+ * Media3 quirk: at [Player.STATE_ENDED] the player keeps `playWhenReady=true`
+ * while `isPlaying=false`, so a plain `play()` is a no-op and the video stays
+ * frozen on the last frame. When the toggle fires in that state the playback
+ * must first be seeked back to the start, otherwise it can never restart.
+ */
+fun playPauseDecision(
+    playbackState: Int,
+    playWhenReady: Boolean,
+    isPlaying: Boolean,
+    playPauseToggled: Boolean,
+): PlayPauseDecision {
+    if (!playPauseToggled) {
+        // State-change path: keep the UI flag in sync with the real player. At
+        // ENDED the player is not playing even though playWhenReady may still be
+        // true, so the UI must show Play, not Pause.
+        return PlayPauseDecision(
+            shouldSeekToZero = false,
+            newIsPlaying = playbackState != Player.STATE_ENDED && playWhenReady && isPlaying,
+        )
+    }
+    return if (isPlaying) {
+        PlayPauseDecision(shouldSeekToZero = false, newIsPlaying = false)
+    } else if (playbackState == Player.STATE_ENDED) {
+        PlayPauseDecision(shouldSeekToZero = true, newIsPlaying = true)
+    } else {
+        PlayPauseDecision(shouldSeekToZero = false, newIsPlaying = true)
+    }
 }
