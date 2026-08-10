@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,7 +35,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.phonk.editor.R
 import dev.phonk.editor.editor.CutPattern
+import dev.phonk.editor.model.ColorGrade
 import dev.phonk.editor.model.EffectKind
+import dev.phonk.editor.model.GradeParam
 import dev.phonk.editor.model.TextLayer
 import dev.phonk.editor.ui.components.PhonkButton
 import dev.phonk.editor.ui.components.PhonkSlider
@@ -51,10 +54,22 @@ enum class SpeedPreset {
 }
 
 @Composable
-fun EffectsPanel(onAdd: (EffectKind) -> Unit) {
+fun EffectsPanel(
+    onAdd: (EffectKind) -> Unit,
+    hasClipEffect: Boolean,
+    onClear: () -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth().padding(12.dp)) {
         SectionHeader(stringResource(R.string.tool_effects))
+        if (hasClipEffect) {
+            PhonkButton(
+                label = stringResource(R.string.fx_remove_effect),
+                onClick = onClear,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(6.dp))
+        }
         EffectCategory(stringResource(R.string.fx_category_beat)) {
             listOf(
                 NamedEffect(EffectKind.FLASH, R.string.fx_beat_flash),
@@ -166,72 +181,165 @@ fun TransitionsPanel(
 
 @Composable
 fun FiltersPanel(
-    brightness: Float,
-    contrast: Float,
-    saturation: Float,
-    onBrightness: (Float) -> Unit,
-    onContrast: (Float) -> Unit,
-    onSaturation: (Float) -> Unit,
+    grade: ColorGrade,
+    keyframesEnabled: Boolean,
+    keyframeCount: Int,
+    beatSync: Boolean,
+    beatSyncStrength: Float,
+    onGrade: (GradeParam, Float) -> Unit,
+    onResetAll: () -> Unit,
+    onAddKeyframe: () -> Unit,
+    onClearKeyframes: () -> Unit,
+    onKeyframesEnabled: (Boolean) -> Unit,
+    onBeatSync: (Boolean) -> Unit,
+    onBeatSyncStrength: (Float) -> Unit,
 ) {
+    val scheme = MaterialTheme.colorScheme
+    val labelRes = mapOf(
+        GradeParam.BRIGHTNESS to R.string.adj_brightness,
+        GradeParam.CONTRAST to R.string.adj_contrast,
+        GradeParam.SATURATION to R.string.adj_saturation,
+        GradeParam.EXPOSURE to R.string.adj_exposure,
+        GradeParam.TEMPERATURE to R.string.adj_temperature,
+        GradeParam.TINT to R.string.adj_tint,
+        GradeParam.HIGHLIGHTS to R.string.adj_highlights,
+        GradeParam.SHADOWS to R.string.adj_shadows,
+        GradeParam.FADE to R.string.adj_fade,
+        GradeParam.SHARPNESS to R.string.adj_sharpness,
+        GradeParam.BLUR to R.string.adj_blur,
+        GradeParam.VIGNETTE to R.string.adj_vignette,
+        GradeParam.GRAIN to R.string.adj_grain,
+    )
     Column(Modifier.fillMaxWidth().padding(12.dp)) {
         SectionHeader(stringResource(R.string.tool_filters))
-        SliderRow(stringResource(R.string.adj_brightness), brightness) { onBrightness(it) }
-        SliderRow(stringResource(R.string.adj_contrast), contrast) { onContrast(it) }
-        SliderRow(stringResource(R.string.adj_saturation), saturation) { onSaturation(it) }
+        GradeParam.entries.forEach { param ->
+            GradeSliderRow(
+                label = stringResource(labelRes.getValue(param)),
+                value = grade.get(param),
+                range = param.range,
+                onValueChange = { onGrade(param, it) },
+                onReset = { onGrade(param, 0f) },
+            )
+        }
         Spacer(Modifier.height(4.dp))
-        Text(stringResource(R.string.filters_note), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PhonkButton(stringResource(R.string.filters_reset_all), onClick = onResetAll, modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(stringResource(R.string.filters_note), fontSize = 10.sp, color = scheme.onSurfaceVariant)
         Spacer(Modifier.height(8.dp))
         SectionHeader(stringResource(R.string.filters_presets))
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(
-                PresetDef(R.string.preset_dark_phonk, -0.2f, 0.3f, 0.2f),
-                PresetDef(R.string.preset_purple_night, -0.1f, 0.25f, 0.6f),
-                PresetDef(R.string.preset_cinematic, -0.05f, 0.15f, -0.25f),
-                PresetDef(R.string.preset_vhs, 0.05f, 0.1f, -0.4f),
-                PresetDef(R.string.preset_cyber, 0f, 0.2f, 0.7f),
-                PresetDef(R.string.preset_mono, 0f, 0.1f, -1f),
-            ).forEach { p ->
-                PresetChip(p.labelRes, p.brightness, p.contrast, p.saturation,
-                    onBrightness = onBrightness, onContrast = onContrast, onSaturation = onSaturation)
+            PRESETS.forEach { p ->
+                PresetChip(p.labelRes, p.grade) { g ->
+                    PRESETS_APPLY.forEach { param -> onGrade(param, g.get(param)) }
+                }
             }
+        }
+
+        Spacer(Modifier.height(10.dp))
+        SectionHeader(stringResource(R.string.keyframes))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.keyframes_animate), modifier = Modifier.weight(1f), fontSize = 12.sp, color = scheme.onSurface)
+            if (keyframeCount > 0) {
+                Text("$keyframeCount", fontSize = 11.sp, color = scheme.primary, modifier = Modifier.padding(end = 6.dp))
+            }
+            Switch(checked = keyframesEnabled, onCheckedChange = onKeyframesEnabled)
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PhonkButton(stringResource(R.string.keyframes_add), onClick = onAddKeyframe, modifier = Modifier.weight(1f))
+            PhonkButton(stringResource(R.string.keyframes_clear), onClick = onClearKeyframes, modifier = Modifier.weight(1f), enabled = keyframeCount > 0)
+        }
+        Spacer(Modifier.height(10.dp))
+        SectionHeader(stringResource(R.string.beat_sync))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.beat_sync_live),
+                modifier = Modifier.weight(1f),
+                fontSize = 12.sp,
+                color = scheme.onSurface,
+            )
+            Switch(checked = beatSync, onCheckedChange = onBeatSync)
+        }
+        if (beatSync) {
+            Spacer(Modifier.height(4.dp))
+            GradeSliderRow(
+                label = stringResource(R.string.beat_sync_strength),
+                value = beatSyncStrength,
+                range = 0f..1f,
+                onValueChange = onBeatSyncStrength,
+                onReset = { onBeatSyncStrength(0.5f) },
+            )
         }
     }
 }
 
-private data class PresetDef(val labelRes: Int, val brightness: Float, val contrast: Float, val saturation: Float)
+private data class PresetDef(val labelRes: Int, val grade: ColorGrade)
+
+private val PRESETS = listOf(
+    PresetDef(R.string.preset_dark_phonk, ColorGrade(contrast = 0.3f, saturation = 0.2f, brightness = -0.15f)),
+    PresetDef(R.string.preset_purple_night, ColorGrade(contrast = 0.25f, saturation = 0.6f, temperature = 0.35f, brightness = -0.05f)),
+    PresetDef(R.string.preset_cinematic, ColorGrade(contrast = 0.15f, saturation = -0.25f, fade = 0.08f)),
+    PresetDef(R.string.preset_vhs, ColorGrade(brightness = 0.05f, contrast = 0.1f, saturation = -0.4f, grain = 0.5f, vignette = 0.35f)),
+    PresetDef(R.string.preset_cyber, ColorGrade(contrast = 0.2f, saturation = 0.7f, temperature = -0.3f, tint = 0.4f)),
+    PresetDef(R.string.preset_mono, ColorGrade(saturation = -1f, contrast = 0.1f)),
+    PresetDef(R.string.preset_high_contrast, ColorGrade(contrast = 0.55f, brightness = 0.05f, shadows = -0.2f)),
+    PresetDef(R.string.preset_deep_shadow, ColorGrade(contrast = 0.4f, brightness = -0.25f, shadows = -0.3f, vignette = 0.6f)),
+)
+
+/** All grade parameters a preset chip should overwrite when applied. */
+private val PRESETS_APPLY = GradeParam.entries
 
 @Composable
-private fun SliderRow(label: String, value: Float, onValueChange: (Float) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(88.dp))
-        PhonkSlider(value = value, onValueChange = onValueChange, modifier = Modifier.weight(1f))
+private fun GradeSliderRow(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    onValueChange: (Float) -> Unit,
+    onReset: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontSize = 11.sp, color = scheme.onSurfaceVariant, modifier = Modifier.width(96.dp))
+        PhonkSlider(
+            value = value.coerceIn(range),
+            onValueChange = onValueChange,
+            valueRange = range,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            String.format("%+.2f", value.toDouble()),
+            fontSize = 10.sp,
+            color = scheme.onSurfaceVariant,
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(46.dp),
+        )
+        Text(
+            "↺",
+            fontSize = 13.sp,
+            color = if (kotlin.math.abs(value) < 0.001f) scheme.outline.copy(alpha = 0.4f) else scheme.primary,
+            modifier = Modifier
+                .padding(start = 6.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .clickable(enabled = kotlin.math.abs(value) >= 0.001f, onClick = onReset)
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+        )
     }
 }
 
 @Composable
-private fun PresetChip(
-    labelRes: Int,
-    brightness: Float,
-    contrast: Float,
-    saturation: Float,
-    onBrightness: (Float) -> Unit,
-    onContrast: (Float) -> Unit,
-    onSaturation: (Float) -> Unit,
-) {
+private fun PresetChip(labelRes: Int, grade: ColorGrade, onApply: (ColorGrade) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
-            .width(80.dp)
+            .width(82.dp)
             .height(52.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(Brush.verticalGradient(listOf(scheme.primary.copy(alpha = 0.8f), scheme.surface)))
             .border(1.dp, scheme.outline.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
-            .clickable {
-                onBrightness(brightness)
-                onContrast(contrast)
-                onSaturation(saturation)
-            },
+            .clickable { onApply(grade) },
     ) {
         Text(
             stringResource(labelRes),
@@ -453,9 +561,9 @@ fun AdjustPanel(
 ) {
     Column(Modifier.fillMaxWidth().padding(12.dp)) {
         SectionHeader(stringResource(R.string.tool_adjust))
-        SliderRow(stringResource(R.string.adj_brightness), brightness) { onBrightness(it) }
-        SliderRow(stringResource(R.string.adj_contrast), contrast) { onContrast(it) }
-        SliderRow(stringResource(R.string.adj_saturation), saturation) { onSaturation(it) }
+        GradeSliderRow(stringResource(R.string.adj_brightness), brightness, -1f..1f, onBrightness) { onBrightness(0f) }
+        GradeSliderRow(stringResource(R.string.adj_contrast), contrast, -1f..1f, onContrast) { onContrast(0f) }
+        GradeSliderRow(stringResource(R.string.adj_saturation), saturation, -1f..1f, onSaturation) { onSaturation(0f) }
         Spacer(Modifier.height(6.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PhonkButton(stringResource(R.string.tool_split), onClick = onSplit, modifier = Modifier.weight(1f))

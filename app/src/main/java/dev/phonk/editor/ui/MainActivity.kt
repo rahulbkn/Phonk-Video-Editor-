@@ -39,6 +39,10 @@ fun PhonkApp() {
         )
         is Route.Settings -> SettingsScreen(
             onBack = { screen = Route.Home },
+            onOpenDeveloper = { screen = Route.Debug },
+        )
+        is Route.Debug -> DebugScreen(
+            onBack = { screen = Route.Settings },
         )
     }
 }
@@ -47,6 +51,7 @@ sealed interface Route {
     data object Home : Route
     data class Editor(val projectId: String) : Route
     data object Settings : Route
+    data object Debug : Route
 }
 
 private val routeSaver = Saver<Route, String>(
@@ -55,12 +60,14 @@ private val routeSaver = Saver<Route, String>(
             Route.Home -> "home"
             is Route.Editor -> "editor:${route.projectId}"
             Route.Settings -> "settings"
+            Route.Debug -> "debug"
         }
     },
     restore = { raw ->
         when {
             raw == "home" -> Route.Home
             raw == "settings" -> Route.Settings
+            raw == "debug" -> Route.Debug
             raw.startsWith("editor:") -> Route.Editor(raw.removePrefix("editor:"))
             else -> Route.Home
         }

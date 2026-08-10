@@ -5,17 +5,20 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -31,8 +34,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -40,6 +46,8 @@ import androidx.core.net.toUri
 import dev.phonk.editor.analysis.AudioExtractor
 import dev.phonk.editor.model.PhonkProject
 import dev.phonk.editor.project.ProjectStore
+import dev.phonk.editor.ui.components.CornerCard
+import dev.phonk.editor.util.ThumbnailLoader
 import dev.phonk.editor.util.TimeUtils.formatClock
 import dev.phonk.editor.R
 
@@ -132,36 +140,83 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(recent) { project ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onOpen(project) },
-                        ) {
-                            Column(Modifier.padding(12.dp)) {
-                                Text(project.name, style = MaterialTheme.typography.titleSmall)
-                                val d = project.videoDurationMs
-                                val hasBpm = project.bpm > 0.0
-                                val duration = if (d > 0) formatClock(d) else null
-                                val info = when {
-                                    duration != null && hasBpm -> stringResource(
-                                        R.string.home_duration_bpm, duration, project.bpm
-                                    )
-                                    duration != null -> duration
-                                    hasBpm -> stringResource(R.string.home_bpm, project.bpm)
-                                    else -> stringResource(R.string.home_not_analyzed)
-                                }
-                                Text(info, style = MaterialTheme.typography.bodySmall)
-                                val drops = project.drops.size
-                                val beats = project.beats.size
-                                Text(
-                                    stringResource(R.string.home_beats_drops, beats, drops),
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                        }
+                        ProjectCard(
+                            project = project,
+                            onOpen = { onOpen(project) },
+                        )
                     }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun ProjectCard(
+    project: PhonkProject,
+    onOpen: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    var thumb by remember(project.id) { mutableStateOf(ThumbnailLoader.peek(project.id)) }
+
+    LaunchedEffect(project.id, project.videoUri) {
+        if (thumb == null) thumb = ThumbnailLoader.load(context, project.id, project.videoUri)
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen),
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(CornerCard))
+                    .background(thumbGradient(scheme, project.id)),
+            ) {
+                thumb?.let { bmp ->
+                    Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+            Column(Modifier.padding(12.dp)) {
+                Text(project.name, style = MaterialTheme.typography.titleSmall)
+                val d = project.videoDurationMs
+                val hasBpm = project.bpm > 0.0
+                val duration = if (d > 0) formatClock(d) else null
+                val info = when {
+                    duration != null && hasBpm -> stringResource(
+                        R.string.home_duration_bpm, duration, project.bpm
+                    )
+                    duration != null -> duration
+                    hasBpm -> stringResource(R.string.home_bpm, project.bpm)
+                    else -> stringResource(R.string.home_not_analyzed)
+                }
+                Text(info, style = MaterialTheme.typography.bodySmall)
+                val drops = project.drops.size
+                val beats = project.beats.size
+                Text(
+                    stringResource(R.string.home_beats_drops, beats, drops),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+/** Deterministic placeholder gradient until the video frame decodes. */
+@Composable
+private fun thumbGradient(scheme: androidx.compose.material3.ColorScheme, id: String): Brush =
+    Brush.linearGradient(
+        listOf(
+            scheme.primary.copy(alpha = 0.55f + (id.hashCode().and(3)) * 0.1f),
+            scheme.surfaceVariant,
+        )
+    )

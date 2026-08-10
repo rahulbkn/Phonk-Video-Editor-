@@ -48,6 +48,23 @@ class ProjectCodecTest {
                 maintainAspect = false,
                 hardwareAccel = false,
             ),
+            exposure = 0.2f,
+            temperature = -0.3f,
+            tint = 0.1f,
+            highlights = 0.4f,
+            shadows = -0.2f,
+            fade = 0.15f,
+            sharpness = 0.5f,
+            blur = 0.3f,
+            vignette = 0.6f,
+            grain = 0.25f,
+            gradeKeyframesEnabled = true,
+            beatSync = true,
+            beatSyncStrength = 0.9f,
+            gradeKeyframes = listOf(
+                GradeKeyframe(0L, ColorGrade(brightness = 0.1f, contrast = 0.2f)),
+                GradeKeyframe(1000L, ColorGrade(saturation = -0.5f, exposure = 0.3f)),
+            ),
         )
 
         val json = ProjectCodec().toJson(original)
@@ -72,6 +89,23 @@ class ProjectCodecTest {
         assertEquals(original.export.fps, back.export.fps)
         assertEquals(original.export.videoCodec, back.export.videoCodec)
         assertEquals(original.export.audioBitrate, back.export.audioBitrate)
+        assertEquals(original.exposure, back.exposure, 0.001f)
+        assertEquals(original.temperature, back.temperature, 0.001f)
+        assertEquals(original.tint, back.tint, 0.001f)
+        assertEquals(original.highlights, back.highlights, 0.001f)
+        assertEquals(original.shadows, back.shadows, 0.001f)
+        assertEquals(original.fade, back.fade, 0.001f)
+        assertEquals(original.sharpness, back.sharpness, 0.001f)
+        assertEquals(original.blur, back.blur, 0.001f)
+        assertEquals(original.vignette, back.vignette, 0.001f)
+        assertEquals(original.grain, back.grain, 0.001f)
+        assertEquals(original.gradeKeyframesEnabled, back.gradeKeyframesEnabled)
+        assertEquals(original.beatSync, back.beatSync)
+        assertEquals(original.beatSyncStrength, back.beatSyncStrength, 0.001f)
+        assertEquals(original.gradeKeyframes.size, back.gradeKeyframes.size)
+        assertEquals(original.gradeKeyframes[0].atMs, back.gradeKeyframes[0].atMs)
+        assertEquals(original.gradeKeyframes[0].grade.brightness, back.gradeKeyframes[0].grade.brightness, 0.001f)
+        assertEquals(original.gradeKeyframes[1].grade.exposure, back.gradeKeyframes[1].grade.exposure, 0.001f)
     }
 
     @Test

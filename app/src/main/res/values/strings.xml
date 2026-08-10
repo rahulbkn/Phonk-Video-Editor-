@@ -50,6 +50,15 @@
     <string name="language_system">System</string>
     <string name="language_english">English</string>
     <string name="language_hindi">हिन्दी</string>
+    <string name="developer">Developer</string>
+    <string name="debug_screen_title">Developer</string>
+    <string name="debug_overlays">Debug overlays</string>
+    <string name="debug_overlays_enabled">Draw overlay diagnostics</string>
+    <string name="debug_overlays_hint">Font, alignment, layer windows and playhead readouts on the editor preview. Developer only; never exported.</string>
+    <string name="debug_dev_entries">Developer entries</string>
+    <string name="debug_show_dev_entries">Show developer entries</string>
+    <string name="debug_dev_entries_hint">Hides the Developer card from Settings so normal users never see it.</string>
+    <string name="debug_revealed">Developer mode enabled</string>
 
     <!-- ============================= Crash reporting ============================= -->
 
@@ -157,6 +166,15 @@
     <string name="tool_delete">Delete</string>
     <string name="tool_duplicate">Duplicate</string>
 
+    <string name="overlay_duplicate">Duplicate overlay</string>
+    <string name="overlay_lock">Lock overlay</string>
+    <string name="overlay_unlock">Unlock overlay</string>
+    <string name="overlay_hide">Hide overlay</string>
+    <string name="overlay_show">Show overlay</string>
+    <string name="overlay_front">Bring to front</string>
+    <string name="overlay_back">Send to back</string>
+    <string name="overlay_edit">Edit text</string>
+
     <string name="undo">Undo</string>
     <string name="redo">Redo</string>
     <string name="fullscreen">Fullscreen</string>
@@ -202,6 +220,7 @@
     <string name="fx_mirror">Mirror</string>
     <string name="fx_speed_lines">Speed Lines</string>
     <string name="fx_impact">Impact</string>
+    <string name="fx_remove_effect">Remove Effect</string>
     <string name="fx_aura">Aura</string>
     <string name="fx_energy">Energy</string>
     <string name="fx_screen_shake">Screen Shake</string>
@@ -247,6 +266,16 @@
     <string name="preset_deep_shadow">Deep Shadow</string>
     <string name="filters_presets">Presets</string>
     <string name="filters_note">Filters apply to the whole video when you export. Presets load instantly — tweak the sliders to fine-tune.</string>
+    <string name="filters_reset_all">Reset All</string>
+    <string name="adj_blur">Blur</string>
+    <string name="adj_vignette">Vignette</string>
+    <string name="keyframes">Keyframes</string>
+    <string name="keyframes_animate">Animate grade</string>
+    <string name="keyframes_add">Add Keyframe</string>
+    <string name="keyframes_clear">Clear</string>
+    <string name="beat_sync">Beat Sync</string>
+    <string name="beat_sync_live">Live beat reaction</string>
+    <string name="beat_sync_strength">Strength</string>
 
     <!-- Speed / Velocity -->
     <string name="speed_normal">Normal</string>

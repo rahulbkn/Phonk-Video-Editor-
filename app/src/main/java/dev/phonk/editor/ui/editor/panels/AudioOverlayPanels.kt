@@ -26,11 +26,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.phonk.editor.R
+import dev.phonk.editor.model.OverlayItem
 import dev.phonk.editor.model.OverlayLayer
 import dev.phonk.editor.model.TextLayer
 import dev.phonk.editor.ui.components.PhonkButton
@@ -124,12 +127,18 @@ private fun ActionChip(label: String, active: Boolean, onClick: () -> Unit) {
 
 @Composable
 fun OverlayPanel(
-    overlays: List<OverlayLayer>,
-    textLayers: List<TextLayer>,
+    items: List<OverlayItem>,
+    selectedId: String?,
     onAddImage: () -> Unit,
     onAddSymbol: (String, String) -> Unit,
-    onRemoveOverlay: (String) -> Unit,
-    onRemoveText: (String) -> Unit,
+    onSelect: (String) -> Unit,
+    onDuplicate: (String) -> Unit,
+    onRemove: (String) -> Unit,
+    onLock: (String, Boolean) -> Unit,
+    onHide: (String, Boolean) -> Unit,
+    onFront: (String) -> Unit,
+    onBack: (String) -> Unit,
+    onEditText: (String) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth().padding(12.dp)) {
@@ -157,45 +166,94 @@ fun OverlayPanel(
             }
         }
         Spacer(Modifier.height(8.dp))
-        if (overlays.isEmpty() && textLayers.isEmpty()) {
+        if (items.isEmpty()) {
             Text(stringResource(R.string.empty_no_effects), fontSize = 11.sp, color = scheme.onSurfaceVariant)
         } else {
-            overlays.forEach { ov ->
-                OverlayRow(ov.label, "img") { onRemoveOverlay(ov.id) }
+            items.sortedBy { it.zIndex }.forEach { item ->
+                OverlayRow(
+                    item = item,
+                    selected = item.id == selectedId,
+                    onSelect = { onSelect(item.id) },
+                    onDuplicate = { onDuplicate(item.id) },
+                    onRemove = { onRemove(item.id) },
+                    onLock = { onLock(item.id, !item.locked) },
+                    onHide = { onHide(item.id, !item.visible) },
+                    onFront = { onFront(item.id) },
+                    onBack = { onBack(item.id) },
+                    onEditText = if (item is TextLayer) { { onEditText(item.id) } } else null,
+                )
             }
-            textLayers.filter { it.text.length <= 4 && it.text.all { ch -> !ch.isLetterOrDigit() } }
-                .forEach { tl -> OverlayRow(tl.text, "sym") { onRemoveText(tl.id) } }
         }
     }
 }
 
 @Composable
-private fun OverlayRow(label: String, kind: String, onRemove: () -> Unit) {
+private fun OverlayRow(
+    item: OverlayItem,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    onDuplicate: () -> Unit,
+    onRemove: () -> Unit,
+    onLock: () -> Unit,
+    onHide: () -> Unit,
+    onFront: () -> Unit,
+    onBack: () -> Unit,
+    onEditText: (() -> Unit)?,
+) {
     val scheme = MaterialTheme.colorScheme
     Row(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(scheme.surfaceVariant.copy(alpha = 0.6f))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .background(if (selected) scheme.primary.copy(alpha = 0.18f) else scheme.surfaceVariant.copy(alpha = 0.6f))
+            .clickable { onSelect() }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "[${item.type}] ${item.label.ifBlank { item.type }}",
+                fontSize = 11.sp,
+                color = if (item.visible) scheme.onSurface else scheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            Text(
+                "${item.startMs / 1000}.${(item.startMs % 1000) / 100}s-${item.endMs / 1000}.${(item.endMs % 1000) / 100}s" +
+                    if (item.locked) "  🔒" else "",
+                fontSize = 9.sp,
+                color = scheme.onSurfaceVariant,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+            OverlayActionChip("⧉", stringResource(R.string.overlay_duplicate), onClick = onDuplicate)
+            OverlayActionChip(if (item.locked) "🔒" else "🔓", stringResource(if (item.locked) R.string.overlay_unlock else R.string.overlay_lock), onClick = onLock)
+            OverlayActionChip(if (item.visible) "👁" else "🚫", stringResource(if (item.visible) R.string.overlay_hide else R.string.overlay_show), onClick = onHide)
+            OverlayActionChip("▲", stringResource(R.string.overlay_front), onClick = onFront)
+            OverlayActionChip("▼", stringResource(R.string.overlay_back), onClick = onBack)
+            if (onEditText != null) {
+                OverlayActionChip("✎", stringResource(R.string.overlay_edit), onClick = onEditText)
+            }
+            OverlayActionChip("✕", stringResource(R.string.tool_delete), danger = true, onClick = onRemove)
+        }
+    }
+}
+
+@Composable
+private fun OverlayActionChip(glyph: String, desc: String, onClick: () -> Unit, danger: Boolean = false) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .semantics { contentDescription = desc }
+            .clickable { onClick() }
+            .padding(horizontal = 6.dp, vertical = 5.dp),
+    ) {
         Text(
-            "[$kind] $label",
-            fontSize = 11.sp,
-            color = scheme.onSurface,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-        )
-        Text(
-            stringResource(R.string.tool_delete),
-            fontSize = 11.sp,
-            color = scheme.error,
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .clickable { onRemove() }
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+            glyph,
+            fontSize = 12.sp,
+            color = if (danger) scheme.error else scheme.onSurface,
         )
     }
 }

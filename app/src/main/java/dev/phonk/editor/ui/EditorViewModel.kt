@@ -15,12 +15,19 @@ import dev.phonk.editor.editor.EditEngine
 import dev.phonk.editor.export.ExportRunner
 import dev.phonk.editor.model.AnalysisResult
 import dev.phonk.editor.model.ClipSegment
+import dev.phonk.editor.model.ColorGrade
+import dev.phonk.editor.model.ColorGradeMaps
 import dev.phonk.editor.model.DropType
 import dev.phonk.editor.model.EffectKind
 import dev.phonk.editor.model.ExportConfig
+import dev.phonk.editor.model.GradeKeyframe
+import dev.phonk.editor.model.GradeParam
+import dev.phonk.editor.model.OverlayItem
 import dev.phonk.editor.model.OverlayLayer
 import dev.phonk.editor.model.PhonkProject
 import dev.phonk.editor.model.TextLayer
+import dev.phonk.editor.model.withTiming
+import dev.phonk.editor.model.withTransform
 import dev.phonk.editor.preview.PlayerController
 import dev.phonk.editor.project.ProjectStore
 import dev.phonk.editor.R
@@ -54,6 +61,15 @@ class EditorViewModel(
     private val _playheadMs = MutableStateFlow(0L)
     val playheadMs: StateFlow<Long> = _playheadMs.asStateFlow()
 
+    private val _selectedOverlayId = MutableStateFlow<String?>(null)
+    val selectedOverlayId: StateFlow<String?> = _selectedOverlayId.asStateFlow()
+
+    /** Project state captured at the start of a drag gesture (one undo entry). */
+    private var overlayGestureStart: PhonkProject? = null
+
+    private val _isPlaying = MutableStateFlow(false)
+    val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
+
     val analysisManager: AnalysisManager =
         AnalysisManager(app.contentResolver, viewModelScope)
 
@@ -64,6 +80,7 @@ class EditorViewModel(
     val player: PlayerController = PlayerController(app)
 
     init {
+        player.onEnded = { _isPlaying.value = false }
         viewModelScope.launch {
             analysisManager.state.collect { s ->
                 if (s is AnalysisState.Done) {
@@ -89,10 +106,15 @@ class EditorViewModel(
         _project.value?.let { ProjectStore(app).save(it) }
     }
 
-    /** Applies an edit through the undo stack and persists. */
-    private fun commit(transform: (PhonkProject) -> PhonkProject) {
+    /** Applies an edit through the undo stack and persists.
+ *  [mergeKey] coalesces a continuous gesture (e.g. slider drag) into one
+ *  undo step. Trailing-lambda callers can use `commit { ... }`. */
+    private fun commit(
+        mergeKey: String? = null,
+        transform: (PhonkProject) -> PhonkProject,
+    ) {
         val p = _project.value ?: return
-        _project.value = editEngine.apply(p) { it.let(transform) }
+        _project.value = editEngine.apply(p, mergeKey) { it.let(transform) }
         refreshUndoState()
         persist()
     }
@@ -120,6 +142,7 @@ class EditorViewModel(
         }
         player.setVideo(Uri.parse(p.videoUri ?: p.audioUri ?: ""))
         player.pause()
+        _isPlaying.value = false
         _playheadMs.value = 0L
         refreshUndoState()
     }
@@ -303,15 +326,54 @@ class EditorViewModel(
     }
 
     fun setBrightness(v: Float) {
-        commit { proj -> proj.copy(brightness = v.coerceIn(-1f, 1f), updatedAt = System.currentTimeMillis()) }
+        setGrade(GradeParam.BRIGHTNESS, v)
     }
 
     fun setContrast(v: Float) {
-        commit { proj -> proj.copy(contrast = v.coerceIn(-1f, 1f), updatedAt = System.currentTimeMillis()) }
+        setGrade(GradeParam.CONTRAST, v)
     }
 
     fun setSaturation(v: Float) {
-        commit { proj -> proj.copy(saturation = v.coerceIn(-1f, 1f), updatedAt = System.currentTimeMillis()) }
+        setGrade(GradeParam.SATURATION, v)
+    }
+
+    /** Single path for every continuous grade parameter (coalesced undo). */
+    fun setGrade(param: GradeParam, value: Float) {
+        val v = value.coerceIn(param.range)
+        commit("grade:$param") { proj ->
+            ColorGradeMaps.apply(proj, ColorGradeMaps.of(proj).with(param, v))
+        }
+    }
+
+    /** Resets every grade parameter to neutral in one undo step. */
+    fun resetGrade() {
+        commit { proj -> ColorGradeMaps.apply(proj, ColorGrade()) }
+    }
+
+    /** Captures the current grade as an automation keyframe at [atMs]. */
+    fun addGradeKeyframe(atMs: Long = _playheadMs.value) {
+        val p = _project.value ?: return
+        val at = atMs.coerceIn(0L, p.timelineDurationMs().takeIf { it > 0 } ?: p.videoDurationMs)
+        commit {
+            val existing = it.gradeKeyframes.filter { it.atMs != at }
+            it.copy(gradeKeyframes = (existing + GradeKeyframe(at, it.gradeAt(at))).sortedBy { k -> k.atMs })
+        }
+    }
+
+    fun clearGradeKeyframes() {
+        commit { it.copy(gradeKeyframes = emptyList()) }
+    }
+
+    fun setGradeKeyframesEnabled(enabled: Boolean) {
+        commit { it.copy(gradeKeyframesEnabled = enabled) }
+    }
+
+    fun setBeatSync(enabled: Boolean) {
+        commit { it.copy(beatSync = enabled) }
+    }
+
+    fun setBeatSyncStrength(strength: Float) {
+        commit("beatStrength") { it.copy(beatSyncStrength = strength.coerceIn(0f, 1f)) }
     }
 
     fun applyPattern(pattern: CutPattern) {
@@ -345,7 +407,8 @@ class EditorViewModel(
 
     fun addTextLayer(text: String, startMs: Long, endMs: Long, fontSize: Float, opacity: Float, animation: String) {
         val start = startMs.coerceAtLeast(0L)
-        val end = endMs.coerceAtLeast(start + 500L)
+        val total = _project.value?.let { it.timelineDurationMs().takeIf { t -> t > 0 } ?: it.videoDurationMs } ?: endMs
+        val end = endMs.coerceIn(start + MIN_OVERLAY_DURATION, total.takeIf { it > start } ?: start + MIN_OVERLAY_DURATION)
         commit { proj ->
             proj.copy(textLayers = proj.textLayers + TextLayer(
                 text = text,
@@ -354,26 +417,245 @@ class EditorViewModel(
                 fontSize = fontSize.coerceIn(8f, 120f),
                 opacity = opacity.coerceIn(0.05f, 1f),
                 animation = animation,
+                zIndex = proj.textLayers.size + proj.overlays.size,
             ), updatedAt = System.currentTimeMillis())
         }
+        _selectedOverlayId.value = _project.value?.textLayers?.lastOrNull()?.id
     }
 
     fun removeTextLayer(id: String) {
         commit { proj -> proj.copy(textLayers = proj.textLayers.filterNot { it.id == id }, updatedAt = System.currentTimeMillis()) }
+        if (_selectedOverlayId.value == id) _selectedOverlayId.value = null
     }
 
     fun addOverlay(kind: String, label: String, uri: String?, startMs: Long, endMs: Long) {
         val start = startMs.coerceAtLeast(0L)
-        val end = endMs.coerceAtLeast(start + 500L)
+        val total = _project.value?.let { it.timelineDurationMs().takeIf { t -> t > 0 } ?: it.videoDurationMs } ?: endMs
+        val end = endMs.coerceIn(start + MIN_OVERLAY_DURATION, total.takeIf { it > start } ?: start + MIN_OVERLAY_DURATION)
         commit { proj ->
             proj.copy(overlays = proj.overlays + OverlayLayer(
                 kind = kind, label = label, uri = uri, startMs = start, endMs = end,
+                zIndex = proj.textLayers.size + proj.overlays.size,
             ), updatedAt = System.currentTimeMillis())
         }
+        _selectedOverlayId.value = _project.value?.overlays?.lastOrNull()?.id
     }
 
     fun removeOverlay(id: String) {
-        commit { proj -> proj.copy(overlays = proj.overlays.filterNot { it.id == id }, updatedAt = System.currentTimeMillis()) }
+        commit { proj ->
+            proj.copy(
+                overlays = proj.overlays.filterNot { it.id == id },
+                textLayers = proj.textLayers.filterNot { it.id == id },
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+        if (_selectedOverlayId.value == id) _selectedOverlayId.value = null
+    }
+
+    // ==================== Overlay editing system ====================
+
+    /** Every overlay (text + image/sticker/emoji/shape) as one unified list. */
+    fun overlayItems(): List<OverlayItem> {
+        val p = _project.value ?: return emptyList()
+        return (p.textLayers as List<OverlayItem>) + (p.overlays as List<OverlayItem>)
+    }
+
+    fun overlayById(id: String): OverlayItem? {
+        val p = _project.value ?: return null
+        return p.textLayers.firstOrNull { it.id == id }
+            ?: p.overlays.firstOrNull { it.id == id }
+    }
+
+    fun selectOverlay(id: String?) {
+        _selectedOverlayId.value = id
+    }
+
+    /** Default end time for a new overlay: 3s from the playhead, capped by the
+     *  video/timeline duration (never full-video by default). */
+    fun defaultOverlayEnd(startMs: Long): Long {
+        val p = _project.value ?: return startMs + DEFAULT_OVERLAY_DURATION
+        val total = p.timelineDurationMs().takeIf { it > 0 } ?: p.videoDurationMs
+        return minOf(startMs + DEFAULT_OVERLAY_DURATION, total)
+    }
+
+    /** Marks the start of a transform gesture so it becomes ONE undo step. */
+    fun beginOverlayGesture() {
+        overlayGestureStart = _project.value
+    }
+
+    /**
+     * Live transform during a drag/pinch/rotate. Updates the project in memory
+     * only (no undo entry, no disk write per frame); [endOverlayTransform] seals
+     * a single undo step and persists once.
+     */
+    fun transformOverlayLive(id: String, x: Float, y: Float, sx: Float, sy: Float, rot: Float, opacity: Float) {
+        _project.update { p ->
+            p?.let { applyOverlayItem(it, id) { it.withTransform(x, y, sx, sy, rot, opacity) } }
+        }
+    }
+
+    /** Seals the active gesture: one undo entry (from before the gesture) + persist. */
+    fun endOverlayTransform() {
+        val before = overlayGestureStart ?: return
+        val after = _project.value ?: return
+        overlayGestureStart = null
+        _project.value = editEngine.apply(before) { after }
+        refreshUndoState()
+        persist()
+    }
+
+    /** Committed (single-step) transform update — for buttons/handles, not drags. */
+    fun setOverlayTransform(id: String, x: Float, y: Float, sx: Float, sy: Float, rot: Float, opacity: Float) {
+        commit { p -> applyOverlayItem(p, id) { it.withTransform(x, y, sx, sy, rot, opacity) } }
+    }
+
+    fun setOverlayOpacity(id: String, opacity: Float) {
+        commit { p -> applyOverlayItem(p, id) { it.withTransform(opacity = opacity.coerceIn(0f, 1f)) } }
+    }
+
+    fun setOverlayRotation(id: String, rotation: Float) {
+        commit { p -> applyOverlayItem(p, id) { it.withTransform(rotation = rotation) } }
+    }
+
+    /** Sets the overlay's timeline window (drags on the overlay track). */
+    fun setOverlayTiming(id: String, startMs: Long, endMs: Long) {
+        val p = _project.value ?: return
+        val total = p.timelineDurationMs().takeIf { it > 0 } ?: p.videoDurationMs
+        val minDur = MIN_OVERLAY_DURATION
+        val s = startMs.coerceIn(0L, (endMs - minDur).coerceAtLeast(0L))
+        val e = endMs.coerceIn(s + minDur, total.takeIf { it > 0 } ?: s + minDur)
+        commit { proj -> applyOverlayItem(proj, id) { it.withTiming(startMs = s, endMs = e) } }
+    }
+
+    /** Shifts an overlay's window by [deltaMs], clamped to the timeline. */
+    fun moveOverlayTimeline(id: String, deltaMs: Long) {
+        val p = _project.value ?: return
+        val total = p.timelineDurationMs().takeIf { it > 0 } ?: p.videoDurationMs
+        val item = overlayById(id) ?: return
+        val dur = (item.endMs - item.startMs).coerceAtLeast(MIN_OVERLAY_DURATION)
+        val s = (item.startMs + deltaMs).coerceIn(0L, (total - dur).coerceAtLeast(0L))
+        val e = (s + dur).coerceAtMost(total.takeIf { it > 0 } ?: s + dur)
+        commit { proj -> applyOverlayItem(proj, id) { it.withTiming(startMs = s, endMs = e) } }
+    }
+
+    /** Duplicates an overlay (new id, same content/transform/duration), offset so
+     *  both copies are visible. */
+    fun duplicateOverlay(id: String) {
+        val p = _project.value ?: return
+        val item = overlayById(id) ?: return
+        val dup = when (item) {
+            is TextLayer -> item.copy(
+                id = java.util.UUID.randomUUID().toString().take(8),
+                x = (item.x + 0.06f).coerceAtMost(0.94f),
+                y = (item.y + 0.06f).coerceAtMost(0.94f),
+                zIndex = item.zIndex + 1,
+            )
+            is OverlayLayer -> item.copy(
+                id = java.util.UUID.randomUUID().toString().take(8),
+                x = (item.x + 0.06f).coerceAtMost(0.94f),
+                y = (item.y + 0.06f).coerceAtMost(0.94f),
+                zIndex = item.zIndex + 1,
+            )
+            else -> return
+        }
+        commit { proj ->
+            when (dup) {
+                is TextLayer -> proj.copy(
+                    textLayers = proj.textLayers + dup,
+                    updatedAt = System.currentTimeMillis(),
+                )
+                is OverlayLayer -> proj.copy(
+                    overlays = proj.overlays + dup,
+                    updatedAt = System.currentTimeMillis(),
+                )
+                else -> proj
+            }
+        }
+        _selectedOverlayId.value = dup.id
+    }
+
+    fun deleteOverlay(id: String) {
+        removeOverlay(id)
+    }
+
+    fun setOverlayLocked(id: String, locked: Boolean) {
+        commit { p ->
+            val t = p.textLayers.map { if (it.id == id) it.copy(locked = locked) else it }
+            val o = p.overlays.map { if (it.id == id) it.copy(locked = locked) else it }
+            p.copy(textLayers = t, overlays = o, updatedAt = System.currentTimeMillis())
+        }
+    }
+
+    fun setOverlayVisible(id: String, visible: Boolean) {
+        commit { p ->
+            val t = p.textLayers.map { if (it.id == id) it.copy(visible = visible) else it }
+            val o = p.overlays.map { if (it.id == id) it.copy(visible = visible) else it }
+            p.copy(textLayers = t, overlays = o, updatedAt = System.currentTimeMillis())
+        }
+    }
+
+    /** Reassigns z-indexes so [id] draws above everything else. */
+    fun bringOverlayToFront(id: String) {
+        val items = overlayItems()
+        if (items.size <= 1) return
+        val sorted = items.sortedBy { it.zIndex }
+        val top = sorted.lastOrNull()?.zIndex ?: return
+        commit { p ->
+            val rest = sorted.filter { it.id != id }
+            val next = (top + 1).coerceAtMost(Int.MAX_VALUE - 1)
+            applyOverlayZIndex(p, id, next)
+        }
+    }
+
+    /** Reassigns z-indexes so [id] draws below everything else. */
+    fun sendOverlayToBack(id: String) {
+        val items = overlayItems()
+        if (items.size <= 1) return
+        val sorted = items.sortedBy { it.zIndex }
+        val bottom = sorted.firstOrNull()?.zIndex ?: return
+        commit { p ->
+            applyOverlayZIndex(p, id, (bottom - 1).coerceAtLeast(Int.MIN_VALUE + 1))
+        }
+    }
+
+    /** Edits an existing text overlay in place (never a new layer per edit). */
+    fun updateTextOverlay(
+        id: String,
+        text: String,
+        fontSize: Float,
+        opacity: Float,
+        animation: String,
+        colorArgb: Long,
+    ) {
+        commit { p ->
+            p.copy(
+                textLayers = p.textLayers.map {
+                    if (it.id == id) it.copy(
+                        text = text.ifBlank { it.text },
+                        fontSize = fontSize.coerceIn(8f, 120f),
+                        opacity = opacity.coerceIn(0f, 1f),
+                        animation = animation,
+                        colorArgb = colorArgb,
+                    ) else it
+                },
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+    }
+
+    private fun applyOverlayItem(p: PhonkProject, id: String, f: (OverlayItem) -> OverlayItem): PhonkProject {
+        val changed = f(overlayById(id) ?: return p)
+        return when (changed) {
+            is TextLayer -> p.copy(textLayers = p.textLayers.map { if (it.id == id) changed else it })
+            is OverlayLayer -> p.copy(overlays = p.overlays.map { if (it.id == id) changed else it })
+            else -> p
+        }
+    }
+
+    private fun applyOverlayZIndex(p: PhonkProject, id: String, z: Int): PhonkProject {
+        val t = p.textLayers.map { if (it.id == id) it.copy(zIndex = z) else it }
+        val o = p.overlays.map { if (it.id == id) it.copy(zIndex = z) else it }
+        return p.copy(textLayers = t, overlays = o, updatedAt = System.currentTimeMillis())
     }
 
     fun undo() {
@@ -509,7 +791,13 @@ class EditorViewModel(
     }
 
     fun playPause() {
-        if (player.player.isPlaying) player.pause() else player.play()
+        if (player.player.isPlaying) {
+            player.pause()
+            _isPlaying.value = false
+        } else {
+            player.play()
+            _isPlaying.value = true
+        }
     }
 
     /** Syncs the timeline playhead with the preview (called on a timer).
@@ -524,6 +812,12 @@ class EditorViewModel(
     }
 
     companion object {
+        /** Default duration for a newly added overlay (3s, capped by video length). */
+        const val DEFAULT_OVERLAY_DURATION = 3000L
+
+        /** Minimum overlay window width when trimming on the timeline. */
+        const val MIN_OVERLAY_DURATION = 100L
+
         fun factory(app: Context): ViewModelProvider.Factory = viewModelFactory {
             initializer { EditorViewModel(app) }
         }

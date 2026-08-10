@@ -35,6 +35,23 @@ data class PhonkProject(
     val brightness: Float = 0f,
     val contrast: Float = 0f,
     val saturation: Float = 0f,
+    val exposure: Float = 0f,
+    val temperature: Float = 0f,
+    val tint: Float = 0f,
+    val highlights: Float = 0f,
+    val shadows: Float = 0f,
+    val fade: Float = 0f,
+    val sharpness: Float = 0f,
+    val blur: Float = 0f,
+    val vignette: Float = 0f,
+    val grain: Float = 0f,
+    /** Automation keyframes for the color grade (destination timeline ms). */
+    val gradeKeyframes: List<GradeKeyframe> = emptyList(),
+    /** When true, keyframes animate the grade during playback/export. */
+    val gradeKeyframesEnabled: Boolean = false,
+    /** Live beat-synced reaction (zoom/flash/shake) driven by the beat engine. */
+    val beatSync: Boolean = false,
+    val beatSyncStrength: Float = 0.8f,
     /** Default transition duration between clips (ms). */
     val transitionDurationMs: Long = 400L,
     val textLayers: List<TextLayer> = emptyList(),
@@ -47,6 +64,17 @@ data class PhonkProject(
 
     /** Total destination timeline length in ms, derived from clips. */
     fun timelineDurationMs(): Long = clips.maxOfOrNull { it.destEndMs } ?: 0L
+
+    /** The full shared grade (single source of truth for preview + export). */
+    fun colorGrade(): ColorGrade = ColorGradeMaps.of(this)
+
+    /** Evaluates the grade at a destination timestamp (keyframes aware). */
+    fun gradeAt(destMs: Long): ColorGrade = evaluateColorGrade(
+        base = colorGrade(),
+        keyframes = gradeKeyframes,
+        destMs = destMs,
+        enabled = gradeKeyframesEnabled,
+    )
 }
 
 /** Source span placed on the destination timeline. */
@@ -70,27 +98,123 @@ data class ClipSegment(
     val destDurationMs: Long get() = (destEndMs - destStartMs).coerceAtLeast(0L)
 }
 
+/**
+ * A keyframe that animates an overlay's transform on the destination timeline.
+ * Values are the same normalized project-space coordinates the item uses.
+ */
+data class OverlayKeyframe(
+    val atMs: Long,
+    val x: Float,
+    val y: Float,
+    val scaleX: Float,
+    val scaleY: Float,
+    val rotation: Float,
+    val opacity: Float,
+)
+
+/**
+ * Common contract shared by every overlay variant (text, image, sticker, emoji,
+ * shape, ...). Position is normalized to the video content rectangle:
+ * x = y = 0.5 is the exact centre, so overlays stay resolution-independent
+ * across 720p/1080p/4K and every aspect ratio. The project JSON is the single
+ * source of truth for all of these fields — nothing is kept inside Views.
+ */
+interface OverlayItem {
+    val id: String
+    val startMs: Long
+    val endMs: Long
+    /** Normalized centre X in the video content rect (0..1). */
+    val x: Float
+    /** Normalized centre Y in the video content rect (0..1). */
+    val y: Float
+    val scaleX: Float
+    val scaleY: Float
+    /** Rotation in degrees (free rotation, snaps offered by the editor UI). */
+    val rotation: Float
+    /** 0..1 opacity. */
+    val opacity: Float
+    /** Draw order; higher = on top. */
+    val zIndex: Int
+    /** Project-level visibility; hidden overlays do not render or export. */
+    val visible: Boolean
+    /** Locked overlays cannot be dragged/resized/rotated in the preview. */
+    val locked: Boolean
+    val keyframes: List<OverlayKeyframe>
+
+    /** Overlay family: "Text", "Image", "Sticker", "Emoji", "Shape", ... */
+    val type: String
+    /** Human readable name shown in the timeline / overlay panel. */
+    val label: String
+
+    fun isActiveAt(ms: Long): Boolean = ms in startMs..endMs && visible
+}
+
 /** A text overlay anchored on the destination timeline. */
 data class TextLayer(
-    val id: String = java.util.UUID.randomUUID().toString().take(8),
+    override val id: String = java.util.UUID.randomUUID().toString().take(8),
     val text: String = "Text",
-    val startMs: Long = 0L,
-    val endMs: Long = 3000L,
+    override val startMs: Long = 0L,
+    override val endMs: Long = 3000L,
     val fontSize: Float = 24f,
-    val opacity: Float = 1f,
+    override val opacity: Float = 1f,
     val animation: String = "Fade",
     val colorArgb: Long = 0xFFFFFFFF,
-)
+    override val x: Float = 0.5f,
+    override val y: Float = 0.5f,
+    override val scaleX: Float = 1f,
+    override val scaleY: Float = 1f,
+    override val rotation: Float = 0f,
+    override val zIndex: Int = 0,
+    override val visible: Boolean = true,
+    override val locked: Boolean = false,
+    override val keyframes: List<OverlayKeyframe> = emptyList(),
+) : OverlayItem {
+    override val type: String get() = "Text"
+    override val label: String get() = text
+}
 
 /** An image/shape overlay anchored on the destination timeline. */
 data class OverlayLayer(
-    val id: String = java.util.UUID.randomUUID().toString().take(8),
+    override val id: String = java.util.UUID.randomUUID().toString().take(8),
     val kind: String = "Image",
-    val label: String = "Overlay",
+    override val label: String = "Overlay",
     val uri: String? = null,
-    val startMs: Long = 0L,
-    val endMs: Long = 3000L,
-)
+    override val startMs: Long = 0L,
+    override val endMs: Long = 3000L,
+    override val x: Float = 0.5f,
+    override val y: Float = 0.5f,
+    override val scaleX: Float = 1f,
+    override val scaleY: Float = 1f,
+    override val rotation: Float = 0f,
+    override val opacity: Float = 1f,
+    override val zIndex: Int = 0,
+    override val visible: Boolean = true,
+    override val locked: Boolean = false,
+    override val keyframes: List<OverlayKeyframe> = emptyList(),
+) : OverlayItem {
+    override val type: String get() = kind
+}
+
+/** Returns a copy with the transform fields replaced (works for any variant). */
+fun OverlayItem.withTransform(
+    x: Float = this.x,
+    y: Float = this.y,
+    scaleX: Float = this.scaleX,
+    scaleY: Float = this.scaleY,
+    rotation: Float = this.rotation,
+    opacity: Float = this.opacity,
+): OverlayItem = when (this) {
+    is TextLayer -> copy(x = x, y = y, scaleX = scaleX, scaleY = scaleY, rotation = rotation, opacity = opacity)
+    is OverlayLayer -> copy(x = x, y = y, scaleX = scaleX, scaleY = scaleY, rotation = rotation, opacity = opacity)
+    else -> this
+}
+
+/** Returns a copy with the timeline duration fields replaced. */
+fun OverlayItem.withTiming(startMs: Long = this.startMs, endMs: Long = this.endMs): OverlayItem = when (this) {
+    is TextLayer -> copy(startMs = startMs, endMs = endMs)
+    is OverlayLayer -> copy(startMs = startMs, endMs = endMs)
+    else -> this
+}
 
 enum class EffectKind(val wire: String) {
     NONE("none"),
@@ -201,6 +325,36 @@ class ProjectCodec {
         o.put("brightness", p.brightness.toDouble())
         o.put("contrast", p.contrast.toDouble())
         o.put("saturation", p.saturation.toDouble())
+        o.put("exposure", p.exposure.toDouble())
+        o.put("temperature", p.temperature.toDouble())
+        o.put("tint", p.tint.toDouble())
+        o.put("highlights", p.highlights.toDouble())
+        o.put("shadows", p.shadows.toDouble())
+        o.put("fade", p.fade.toDouble())
+        o.put("sharpness", p.sharpness.toDouble())
+        o.put("blur", p.blur.toDouble())
+        o.put("vignette", p.vignette.toDouble())
+        o.put("grain", p.grain.toDouble())
+        o.put("gradeKeyframes", JSONArray().also { arr -> p.gradeKeyframes.forEach { k ->
+            val gradeObj = JSONObject()
+                .put("brightness", k.grade.brightness.toDouble())
+                .put("contrast", k.grade.contrast.toDouble())
+                .put("saturation", k.grade.saturation.toDouble())
+                .put("exposure", k.grade.exposure.toDouble())
+                .put("temperature", k.grade.temperature.toDouble())
+                .put("tint", k.grade.tint.toDouble())
+                .put("highlights", k.grade.highlights.toDouble())
+                .put("shadows", k.grade.shadows.toDouble())
+                .put("fade", k.grade.fade.toDouble())
+                .put("sharpness", k.grade.sharpness.toDouble())
+                .put("blur", k.grade.blur.toDouble())
+                .put("vignette", k.grade.vignette.toDouble())
+                .put("grain", k.grade.grain.toDouble())
+            arr.put(JSONObject().put("atMs", k.atMs).put("grade", gradeObj))
+        }})
+        o.put("gradeKeyframesEnabled", p.gradeKeyframesEnabled)
+        o.put("beatSync", p.beatSync)
+        o.put("beatSyncStrength", p.beatSyncStrength.toDouble())
         o.put("transitionDurationMs", p.transitionDurationMs)
         o.put("textLayers", JSONArray().also { arr -> p.textLayers.forEach { t ->
             arr.put(JSONObject()
@@ -211,7 +365,16 @@ class ProjectCodec {
                 .put("fontSize", t.fontSize.toDouble())
                 .put("opacity", t.opacity.toDouble())
                 .put("animation", t.animation)
-                .put("colorArgb", t.colorArgb))
+                .put("colorArgb", t.colorArgb)
+                .put("x", t.x.toDouble())
+                .put("y", t.y.toDouble())
+                .put("scaleX", t.scaleX.toDouble())
+                .put("scaleY", t.scaleY.toDouble())
+                .put("rotation", t.rotation.toDouble())
+                .put("zIndex", t.zIndex)
+                .put("visible", t.visible)
+                .put("locked", t.locked)
+                .put("keyframes", overlayKeyframesJson(t.keyframes)))
         }})
         o.put("overlays", JSONArray().also { arr -> p.overlays.forEach { ov ->
             arr.put(JSONObject()
@@ -220,7 +383,17 @@ class ProjectCodec {
                 .put("label", ov.label)
                 .put("uri", ov.uri)
                 .put("startMs", ov.startMs)
-                .put("endMs", ov.endMs))
+                .put("endMs", ov.endMs)
+                .put("x", ov.x.toDouble())
+                .put("y", ov.y.toDouble())
+                .put("scaleX", ov.scaleX.toDouble())
+                .put("scaleY", ov.scaleY.toDouble())
+                .put("rotation", ov.rotation.toDouble())
+                .put("opacity", ov.opacity.toDouble())
+                .put("zIndex", ov.zIndex)
+                .put("visible", ov.visible)
+                .put("locked", ov.locked)
+                .put("keyframes", overlayKeyframesJson(ov.keyframes)))
         }})
         val ex = JSONObject()
         ex.put("resolution", p.export.resolution.name)
@@ -269,6 +442,20 @@ class ProjectCodec {
             brightness = o.optDouble("brightness", 0.0).toFloat(),
             contrast = o.optDouble("contrast", 0.0).toFloat(),
             saturation = o.optDouble("saturation", 0.0).toFloat(),
+            exposure = o.optDouble("exposure", 0.0).toFloat(),
+            temperature = o.optDouble("temperature", 0.0).toFloat(),
+            tint = o.optDouble("tint", 0.0).toFloat(),
+            highlights = o.optDouble("highlights", 0.0).toFloat(),
+            shadows = o.optDouble("shadows", 0.0).toFloat(),
+            fade = o.optDouble("fade", 0.0).toFloat(),
+            sharpness = o.optDouble("sharpness", 0.0).toFloat(),
+            blur = o.optDouble("blur", 0.0).toFloat(),
+            vignette = o.optDouble("vignette", 0.0).toFloat(),
+            grain = o.optDouble("grain", 0.0).toFloat(),
+            gradeKeyframes = parseGradeKeyframes(o.optJSONArray("gradeKeyframes")),
+            gradeKeyframesEnabled = o.optBoolean("gradeKeyframesEnabled", false),
+            beatSync = o.optBoolean("beatSync", false),
+            beatSyncStrength = o.optDouble("beatSyncStrength", 0.8).toFloat(),
             transitionDurationMs = o.optLong("transitionDurationMs", 400L),
             textLayers = parseTextLayers(o.optJSONArray("textLayers")),
             overlays = parseOverlays(o.optJSONArray("overlays")),
@@ -372,6 +559,32 @@ class ProjectCodec {
         }
     }
 
+    private fun parseGradeKeyframes(arr: JSONArray?): List<GradeKeyframe> {
+        if (arr == null) return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val k = arr.optJSONObject(i) ?: continue
+                val g = k.optJSONObject("grade")
+                val grade = if (g == null) ColorGrade() else ColorGrade(
+                    brightness = g.optDouble("brightness", 0.0).toFloat(),
+                    contrast = g.optDouble("contrast", 0.0).toFloat(),
+                    saturation = g.optDouble("saturation", 0.0).toFloat(),
+                    exposure = g.optDouble("exposure", 0.0).toFloat(),
+                    temperature = g.optDouble("temperature", 0.0).toFloat(),
+                    tint = g.optDouble("tint", 0.0).toFloat(),
+                    highlights = g.optDouble("highlights", 0.0).toFloat(),
+                    shadows = g.optDouble("shadows", 0.0).toFloat(),
+                    fade = g.optDouble("fade", 0.0).toFloat(),
+                    sharpness = g.optDouble("sharpness", 0.0).toFloat(),
+                    blur = g.optDouble("blur", 0.0).toFloat(),
+                    vignette = g.optDouble("vignette", 0.0).toFloat(),
+                    grain = g.optDouble("grain", 0.0).toFloat(),
+                )
+                add(GradeKeyframe(atMs = k.optLong("atMs", 0L), grade = grade))
+            }
+        }
+    }
+
     private fun parseFloatList(arr: JSONArray?): List<Float> {
         if (arr == null) return emptyList()
         return buildList {
@@ -394,6 +607,15 @@ class ProjectCodec {
                         opacity = t.optDouble("opacity", 1.0).toFloat(),
                         animation = t.optString("animation", "Fade"),
                         colorArgb = t.optLong("colorArgb", 0xFFFFFFFF),
+                        x = t.optDouble("x", 0.5).toFloat(),
+                        y = t.optDouble("y", 0.5).toFloat(),
+                        scaleX = t.optDouble("scaleX", 1.0).toFloat(),
+                        scaleY = t.optDouble("scaleY", 1.0).toFloat(),
+                        rotation = t.optDouble("rotation", 0.0).toFloat(),
+                        zIndex = t.optInt("zIndex", 0),
+                        visible = t.optBoolean("visible", true),
+                        locked = t.optBoolean("locked", false),
+                        keyframes = parseOverlayKeyframes(t.optJSONArray("keyframes")),
                     )
                 )
             }
@@ -414,6 +636,50 @@ class ProjectCodec {
                             ov.optString("uri", null) else null,
                         startMs = ov.optLong("startMs", 0L),
                         endMs = ov.optLong("endMs", 3000L),
+                        x = ov.optDouble("x", 0.5).toFloat(),
+                        y = ov.optDouble("y", 0.5).toFloat(),
+                        scaleX = ov.optDouble("scaleX", 1.0).toFloat(),
+                        scaleY = ov.optDouble("scaleY", 1.0).toFloat(),
+                        rotation = ov.optDouble("rotation", 0.0).toFloat(),
+                        opacity = ov.optDouble("opacity", 1.0).toFloat(),
+                        zIndex = ov.optInt("zIndex", 0),
+                        visible = ov.optBoolean("visible", true),
+                        locked = ov.optBoolean("locked", false),
+                        keyframes = parseOverlayKeyframes(ov.optJSONArray("keyframes")),
+                    )
+                )
+            }
+        }
+    }
+
+    private fun overlayKeyframesJson(keyframes: List<OverlayKeyframe>): JSONArray =
+        JSONArray().also { arr ->
+            keyframes.forEach { k ->
+                arr.put(JSONObject()
+                    .put("atMs", k.atMs)
+                    .put("x", k.x.toDouble())
+                    .put("y", k.y.toDouble())
+                    .put("scaleX", k.scaleX.toDouble())
+                    .put("scaleY", k.scaleY.toDouble())
+                    .put("rotation", k.rotation.toDouble())
+                    .put("opacity", k.opacity.toDouble()))
+            }
+        }
+
+    private fun parseOverlayKeyframes(arr: JSONArray?): List<OverlayKeyframe> {
+        if (arr == null) return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val k = arr.optJSONObject(i) ?: continue
+                add(
+                    OverlayKeyframe(
+                        atMs = k.optLong("atMs", 0L),
+                        x = k.optDouble("x", 0.5).toFloat(),
+                        y = k.optDouble("y", 0.5).toFloat(),
+                        scaleX = k.optDouble("scaleX", 1.0).toFloat(),
+                        scaleY = k.optDouble("scaleY", 1.0).toFloat(),
+                        rotation = k.optDouble("rotation", 0.0).toFloat(),
+                        opacity = k.optDouble("opacity", 1.0).toFloat(),
                     )
                 )
             }

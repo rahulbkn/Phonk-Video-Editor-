@@ -40,14 +40,18 @@ import dev.phonk.editor.ui.components.PhonkSlider
 @Composable
 fun TextEditDialog(
     initial: String,
+    initialSize: Float = 24f,
+    initialOpacity: Float = 1f,
+    initialAnimation: String = "Fade",
+    initialColorArgb: Long = 0xFFFFFFFFL,
     onDismiss: () -> Unit,
-    onSave: (text: String, fontSize: Float, opacity: Float, animation: String) -> Unit,
+    onSave: (text: String, fontSize: Float, opacity: Float, animation: String, colorArgb: Long) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     var text by remember { mutableStateOf(TextFieldValue(initial)) }
-    var size by remember { mutableStateOf(24f) }
-    var opacity by remember { mutableStateOf(1f) }
-    var animation by remember { mutableStateOf("Fade") }
+    var size by remember { mutableStateOf(initialSize) }
+    var opacity by remember { mutableStateOf(initialOpacity) }
+    var animation by remember { mutableStateOf(initialAnimation) }
     val animations = listOf("Fade", "Slide", "Pop", "Glitch", "Zoom")
 
     AlertDialog(
@@ -95,7 +99,7 @@ fun TextEditDialog(
         confirmButton = {
             PhonkButton(
                 label = stringResource(R.string.ok),
-                onClick = { onSave(text.text.ifBlank { "Text" }, size, opacity, animation) },
+                onClick = { onSave(text.text.ifBlank { "Text" }, size, opacity, animation, initialColorArgb) },
                 primary = true,
             )
         },

@@ -41,7 +41,7 @@ import androidx.compose.material3.Text
 
 val ToolbarHeight = 52.dp
 val TrackHeight = 48.dp
-val PanelHeight = 150.dp
+val PanelHeight = 190.dp
 val BottomToolHeight = 56.dp
 
 val CornerCard = 16.dp

@@ -35,6 +35,36 @@ class EditEngineTest {
     }
 
     @Test
+    fun continuousSameKeyGestureCoalescesIntoOneUndo() {
+        val engine = EditEngine()
+        var base = PhonkProject()
+        for (name in listOf("A", "B", "C")) {
+            base = engine.apply(base, "slider:brightness") { it.copy(name = name) }
+        }
+        assertEquals("C", base.name)
+        // One undo must jump back to before the whole drag, not one step at a time.
+        val undone = engine.undo(base)
+        assertEquals("Untitled", undone.name)
+        assertFalse(engine.canUndo)
+
+        // Redo reapplies the final drag value.
+        val redone = engine.redo(undone)
+        assertEquals("C", redone.name)
+    }
+
+    @Test
+    fun distinctKeysKeepSeparateUndoSteps() {
+        val engine = EditEngine()
+        var p = engine.apply(PhonkProject(), "a") { it.copy(name = "1") }
+        p = engine.apply(p, "b") { it.copy(name = "2") }
+        p = engine.undo(p)
+        assertEquals("1", p.name)
+        p = engine.undo(p)
+        assertEquals("Untitled", p.name)
+        assertFalse(engine.canUndo)
+    }
+
+    @Test
     fun moveDropIsIdempotentWithinTolerance() {
         val base = PhonkProject(drops = listOf(
             dev.phonk.editor.model.DropMarker(1000.0, 0.9f, 0.8f, DropType.HARD_DROP)

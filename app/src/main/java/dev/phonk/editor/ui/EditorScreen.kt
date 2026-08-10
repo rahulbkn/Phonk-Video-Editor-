@@ -58,8 +58,11 @@ import dev.phonk.editor.R
 import dev.phonk.editor.editor.CutPattern
 import dev.phonk.editor.export.ExportDialog
 import dev.phonk.editor.export.ExportState
+import dev.phonk.editor.model.ColorGrade
+import dev.phonk.editor.model.EffectKind
 import dev.phonk.editor.model.ExportConfig
 import dev.phonk.editor.model.PhonkProject
+import dev.phonk.editor.model.TextLayer
 import dev.phonk.editor.project.ProjectStore
 import dev.phonk.editor.timeline.TimelineController
 import dev.phonk.editor.timeline.TimelineView
@@ -121,6 +124,7 @@ fun EditorScreen(
     var pattern by remember { mutableStateOf(CutPattern.B) }
     var showTextDialog by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var editOverlayId by remember { mutableStateOf<String?>(null) }
 
     val videoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -157,6 +161,8 @@ fun EditorScreen(
     val analysisState by vm.analysisManager.state.collectAsStateWithLifecycle()
     val exportState by vm.exportRunner.state.collectAsStateWithLifecycle()
     val playhead by vm.playheadMs.collectAsStateWithLifecycle()
+    val isPlayingState by vm.isPlaying.collectAsStateWithLifecycle()
+    val selectedOverlayId by vm.selectedOverlayId.collectAsStateWithLifecycle()
     val canUndo by vm.canUndo.collectAsStateWithLifecycle()
     val canRedo by vm.canRedo.collectAsStateWithLifecycle()
 
@@ -180,11 +186,11 @@ fun EditorScreen(
     }
 
     // Per-clip speed preview: mirror the speed of the clip under the playhead.
-    LaunchedEffect(playhead, p) {
+    LaunchedEffect(playhead, p, isPlayingState) {
         val clip = vm.clipAt(playhead)
-        if (clip != null && vm.player.player.isPlaying && clip.speed != 1f) {
+        if (clip != null && isPlayingState && clip.speed != 1f) {
             vm.player.setPreviewSpeed(clip.speed)
-        } else if (!vm.player.player.isPlaying) {
+        } else if (!isPlayingState) {
             vm.player.resetPlaybackParameters()
         }
     }
@@ -196,6 +202,7 @@ fun EditorScreen(
         when {
             showExport -> showExport = false
             showTextDialog -> showTextDialog = false
+            editOverlayId != null -> editOverlayId = null
             selectedTool != Tool.MEDIA -> selectedTool = Tool.MEDIA
             message != null -> message = null
             else -> onBack()
@@ -258,6 +265,18 @@ fun EditorScreen(
         EditorPreview(
             playerController = vm.player,
             project = p,
+            isPlaying = isPlayingState,
+            positionMs = vm.destToSource(playhead),
+            destPlayheadMs = playhead,
+            onPlayPause = { vm.playPause() },
+            selectedOverlayId = selectedOverlayId,
+            onOverlaySelect = { vm.selectOverlay(it) },
+            onOverlayTransformBegin = { vm.beginOverlayGesture() },
+            onOverlayTransformLive = { id, x, y, sx, sy, rot, op ->
+                vm.transformOverlayLive(id, x, y, sx, sy, rot, op)
+            },
+            onOverlayTransformEnd = { vm.endOverlayTransform() },
+            onEditText = { editOverlayId = it },
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
@@ -274,11 +293,14 @@ fun EditorScreen(
                     tv.onSelectClip = { id -> vm.selectClip(id) }
                     tv.onTrimStart = { newStart -> vm.trimClip(newStart, vm.selectedClip()?.destEndMs ?: newStart) }
                     tv.onTrimEnd = { newEnd -> vm.trimClip(vm.selectedClip()?.destStartMs ?: newEnd, newEnd) }
+                    tv.onSelectOverlay = { id -> vm.selectOverlay(id) }
+                    tv.onSetOverlayTiming = { id, start, end -> vm.setOverlayTiming(id, start, end) }
                 }
             },
             update = { tv ->
                 val proj = vm.project.value ?: PhonkProject()
                 tv.project = proj
+                tv.selectedOverlayId = selectedOverlayId
                 tv.controller.totalMs = proj.timelineDurationMs().takeIf { it > 0 } ?: proj.videoDurationMs
                 tv.controller.currentMs = playhead.coerceIn(0L, tv.controller.totalMs)
                 tv.refresh()
@@ -318,14 +340,24 @@ fun EditorScreen(
                         onAdd = { showTextDialog = true },
                         onRemove = { vm.removeTextLayer(it) },
                     )
-                    Tool.EFFECTS -> EffectsPanel(onAdd = { vm.addEffect(it) })
+                    Tool.EFFECTS -> EffectsPanel(
+                        onAdd = { vm.addEffect(it) },
+                        hasClipEffect = vm.selectedClip()?.effect != EffectKind.NONE,
+                        onClear = { vm.clearClipEffect() },
+                    )
                     Tool.FILTERS -> FiltersPanel(
-                        brightness = p?.brightness ?: 0f,
-                        contrast = p?.contrast ?: 0f,
-                        saturation = p?.saturation ?: 0f,
-                        onBrightness = { vm.setBrightness(it) },
-                        onContrast = { vm.setContrast(it) },
-                        onSaturation = { vm.setSaturation(it) },
+                        grade = p?.colorGrade() ?: ColorGrade(),
+                        keyframesEnabled = p?.gradeKeyframesEnabled == true,
+                        keyframeCount = p?.gradeKeyframes?.size ?: 0,
+                        beatSync = p?.beatSync == true,
+                        beatSyncStrength = p?.beatSyncStrength ?: 0.8f,
+                        onGrade = { param, v -> vm.setGrade(param, v) },
+                        onResetAll = { vm.resetGrade() },
+                        onAddKeyframe = { vm.addGradeKeyframe(playhead) },
+                        onClearKeyframes = { vm.clearGradeKeyframes() },
+                        onKeyframesEnabled = { vm.setGradeKeyframesEnabled(it) },
+                        onBeatSync = { vm.setBeatSync(it) },
+                        onBeatSyncStrength = { vm.setBeatSyncStrength(it) },
                     )
                     Tool.SPEED -> SpeedPanel(
                         speed = vm.selectedClip()?.speed ?: 1f,
@@ -356,15 +388,21 @@ fun EditorScreen(
                         current = vm.selectedClip()?.transition,
                     )
                     Tool.OVERLAY -> OverlayPanel(
-                        overlays = p?.overlays ?: emptyList(),
-                        textLayers = p?.textLayers ?: emptyList(),
+                        items = vm.overlayItems(),
+                        selectedId = selectedOverlayId,
                         onAddImage = { imagePicker.launch(arrayOf("image/*")) },
                         onAddSymbol = { symbol, label ->
                             val start = playhead
                             vm.addTextLayer(symbol, start, start + 3000, 48f, 1f, "Fade")
                         },
-                        onRemoveOverlay = { vm.removeOverlay(it) },
-                        onRemoveText = { vm.removeTextLayer(it) },
+                        onSelect = { vm.selectOverlay(it) },
+                        onDuplicate = { vm.duplicateOverlay(it) },
+                        onRemove = { vm.deleteOverlay(it) },
+                        onLock = { id, locked -> vm.setOverlayLocked(id, locked) },
+                        onHide = { id, visible -> vm.setOverlayVisible(id, visible) },
+                        onFront = { vm.bringOverlayToFront(it) },
+                        onBack = { vm.sendOverlayToBack(it) },
+                        onEditText = { editOverlayId = it },
                     )
                     Tool.ADJUST -> AdjustPanel(
                         onSplit = { vm.splitAt(playhead) },
@@ -418,14 +456,27 @@ fun EditorScreen(
     }
 
     // ==================== TEXT EDIT DIALOG ====================
-    if (showTextDialog) {
+    if (showTextDialog || editOverlayId != null) {
+        val editing = editOverlayId?.let { vm.overlayById(it) as? TextLayer }
         TextEditDialog(
-            initial = "",
-            onDismiss = { showTextDialog = false },
-            onSave = { text, size, opacity, anim ->
-                val start = playhead
-                vm.addTextLayer(text, start, start + 3000, size, opacity, anim)
+            initial = editing?.text ?: "",
+            initialSize = editing?.fontSize ?: 24f,
+            initialOpacity = editing?.opacity ?: 1f,
+            initialAnimation = editing?.animation ?: "Fade",
+            initialColorArgb = editing?.colorArgb ?: 0xFFFFFFFFL,
+            onDismiss = {
                 showTextDialog = false
+                editOverlayId = null
+            },
+            onSave = { text, size, opacity, anim, color ->
+                if (editing != null) {
+                    vm.updateTextOverlay(editing.id, text, size, opacity, anim, color)
+                } else {
+                    val start = playhead
+                    vm.addTextLayer(text, start, start + 3000, size, opacity, anim)
+                }
+                showTextDialog = false
+                editOverlayId = null
             },
         )
     }

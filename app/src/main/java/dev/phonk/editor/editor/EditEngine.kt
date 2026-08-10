@@ -12,31 +12,53 @@ import java.util.ArrayDeque
  */
 class EditEngine {
 
-    private val undoStack = ArrayDeque<(PhonkProject) -> PhonkProject>()
-    private val redoStack = ArrayDeque<(PhonkProject) -> PhonkProject>()
+    private class Entry(
+        val before: PhonkProject,
+        val after: PhonkProject,
+        val key: String?,
+    )
+
+    private val undoStack = ArrayDeque<Entry>()
+    private val redoStack = ArrayDeque<Entry>()
 
     val canUndo: Boolean get() = undoStack.isNotEmpty()
     val canRedo: Boolean get() = redoStack.isNotEmpty()
 
-    /** Returns true when an action is re-applied after redo. */
-    fun apply(project: PhonkProject, action: (PhonkProject) -> PhonkProject): PhonkProject {
-        val before = project
+    /**
+     * Applies [action] and records an undo/redo entry. When [key] matches the
+     * top undo entry (e.g. the same slider being dragged continuously), the
+     * gesture is coalesced: a single undo restores the state from before the
+     * drag started instead of inserting one entry per UI tick.
+     */
+    fun apply(
+        project: PhonkProject,
+        key: String? = null,
+        action: (PhonkProject) -> PhonkProject,
+    ): PhonkProject {
         val after = action(project)
-        undoStack.push { before }
+        var before = project
+        if (key != null) {
+            val top = undoStack.peekFirst()
+            if (top != null && top.key == key) {
+                undoStack.removeFirst()
+                before = top.before
+            }
+        }
+        undoStack.push(Entry(before, after, key))
         redoStack.clear()
         return after
     }
 
     fun undo(project: PhonkProject): PhonkProject {
-        val restore = undoStack.popOrNull() ?: return project
-        redoStack.push { project }
-        return restore(project)
+        val entry = undoStack.popOrNull() ?: return project
+        redoStack.push(Entry(entry.before, entry.after, entry.key))
+        return entry.before
     }
 
     fun redo(project: PhonkProject): PhonkProject {
-        val restore = redoStack.popOrNull() ?: return project
-        undoStack.push { project }
-        return restore(project)
+        val entry = redoStack.popOrNull() ?: return project
+        undoStack.push(Entry(entry.before, entry.after, entry.key))
+        return entry.after
     }
 
     private fun <T> ArrayDeque<T>.popOrNull(): T? = if (isEmpty()) null else removeFirst()

@@ -76,11 +76,7 @@ class PlayerController(context: Context) {
 
     /** Enter frame-exact scrubbing. Keep volume on to hear edits. */
     fun scrubTo(ms: Long, windowStart: Long, windowEnd: Long) {
-        player.seekTo((ms.coerceIn(windowStart, windowEnd)))
-        val running = player.isPlaying
-        player.playWhenReady = false
         player.seekTo(ms.coerceIn(windowStart, windowEnd))
-        player.playWhenReady = running
     }
 
     fun play() {

@@ -13,10 +13,13 @@ import dev.phonk.editor.editor.EffectScheduler
 import dev.phonk.editor.ffmpeg.EffectSpec
 import dev.phonk.editor.ffmpeg.FFmpegEngine
 import dev.phonk.editor.ffmpeg.FfmpegRenderer
+import dev.phonk.editor.ffmpeg.OverlayRender
 import dev.phonk.editor.ffmpeg.ProcessFFmpegEngine
 import dev.phonk.editor.ffmpeg.RenderState
 import dev.phonk.editor.model.AnalysisResult
 import dev.phonk.editor.model.ClipSegment
+import dev.phonk.editor.model.DropType
+import dev.phonk.editor.model.EffectKind
 import dev.phonk.editor.model.ExportConfig
 import dev.phonk.editor.model.PhonkProject
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import kotlin.math.roundToInt
 
 sealed interface ExportState {
     data object Idle : ExportState
@@ -39,6 +43,9 @@ sealed interface ExportState {
  * gallery without needing storage WRITE permission.
  */
 private const val TAG = "ExportRunner"
+
+/** A rasterized overlay source file plus its pixel size at scale = 1.0. */
+private data class Rasterized(val path: String, val width: Int, val height: Int)
 
 class ExportRunner(
     private val context: Context,
@@ -92,6 +99,41 @@ class ExportRunner(
                 val effectSpecs = EffectScheduler.schedule(clips, analysis.beats)
                     .map { EffectSpec(it.atDestMs, it.durationMs, it.kind, it.amount) }
 
+                // Beat sync is exported as short brightness pulses on each beat
+                // (proportional to the strength slider), the only component of
+                // the preview's beat boost that is representable in this build.
+                val beatPulses = if (project.beatSync) {
+                    buildList {
+                        for (b in analysis.beats) {
+                            if (b.confidence > 0f) {
+                                add(
+                                    EffectSpec(
+                                        b.timestampMs.toLong(),
+                                        90,
+                                        EffectKind.BRIGHTNESS,
+                                        project.beatSyncStrength * 0.4f,
+                                    )
+                                )
+                            }
+                        }
+                        for (d in analysis.drops) {
+                            if (d.strength > 0f) {
+                                add(
+                                    EffectSpec(
+                                        d.timestampMs.toLong(),
+                                        180,
+                                        EffectKind.BRIGHTNESS,
+                                        project.beatSyncStrength * 0.55f,
+                                    )
+                                )
+                            }
+                        }
+                    }.toList()
+                } else {
+                    emptyList()
+                }
+                val allEffects = effectSpecs + beatPulses
+
                 // stage 1: resolve engine
                 val engine = ffmpegEngine()
                 if (!engine.available) {
@@ -103,29 +145,24 @@ class ExportRunner(
 
                 // stage 2: render to internal cache
                 val outFile = File(context.cacheDir, "phonk_export_${System.currentTimeMillis()}.mp4")
-                val overlayFiles = copyOverlayFiles(context, project)
+                val overlayRenders = buildOverlayRenders(project, config)
                 val completed = renderer.render(
                     input = inputPath(videoUri),
                     output = outFile.absolutePath,
                     segments = clips,
                     config = config,
                     hasAudio = true,
-                    effects = effectSpecs,
+                    effects = allEffects,
                     hwEncode = if (config.hardwareAccel) "h264" else null,
                     videoDurationMs = clips.map { it.destEndMs }.maxOrNull() ?: 0L,
                     onProgress = { p ->
                         _state.value = ExportState.Running(p, "rendering")
                     },
-                    colorGrade = dev.phonk.editor.ffmpeg.ColorGrade(
-                        brightness = project.brightness,
-                        contrast = project.contrast,
-                        saturation = project.saturation,
-                    ),
-                    texts = project.textLayers,
-                    overlays = project.overlays,
-                    overlayFiles = overlayFiles,
+                    colorGrade = project.colorGrade(),
+                    overlayRenders = overlayRenders,
                     transitionDurationMs = project.transitionDurationMs,
-                    fontPath = findSystemFont(),
+                    keyframes = project.gradeKeyframes,
+                    keyframesEnabled = project.gradeKeyframesEnabled,
                 )
                 if (cancelRequested) {
                     outFile.delete()
@@ -160,6 +197,60 @@ class ExportRunner(
         return copy.absolutePath
     }
 
+    /**
+     * Resolves every visible overlay into a render ready for the ffmpeg graph.
+     * Text layers and label-only shapes (sticker/emoji) are rasterized to a
+     * transparent PNG at the preview's base sizing; image overlays are copied
+     * from their content URI and given the preview's square base box. Anything
+     * hidden, outside the timeline, or missing its source is skipped — the
+     * export must match the preview exactly.
+     */
+    private fun buildOverlayRenders(project: PhonkProject, config: ExportConfig): List<OverlayRender> {
+        val w = config.resolution.width
+        val h = config.resolution.height
+        val refW = 1080
+        val minSide = minOf(w, h)
+        val imageFiles = copyOverlayFiles(context, project)
+        val out = ArrayList<OverlayRender>()
+        for (t in project.textLayers) {
+            if (!t.visible || t.endMs <= t.startMs) continue
+            val raster = rasterizeText(t, w, refW) ?: continue
+            out += OverlayRender(
+                id = t.id, file = raster.path, baseW = raster.width, baseH = raster.height,
+                startMs = t.startMs, endMs = t.endMs,
+                x = t.x, y = t.y, scaleX = t.scaleX, scaleY = t.scaleY,
+                rotation = t.rotation, opacity = t.opacity, zIndex = t.zIndex,
+                keyframes = t.keyframes,
+            )
+        }
+        for (ov in project.overlays) {
+            if (!ov.visible || ov.endMs <= ov.startMs) continue
+            val file: String
+            val baseW: Int
+            val baseH: Int
+            val fileForOv = ov.uri?.let { imageFiles[ov.id] }
+            if (fileForOv != null) {
+                val side = (minSide * 0.4f).roundToInt().coerceAtLeast(2)
+                file = fileForOv
+                baseW = side
+                baseH = side
+            } else {
+                val raster = rasterizeShape(ov, minSide) ?: continue
+                file = raster.path
+                baseW = raster.width
+                baseH = raster.height
+            }
+            out += OverlayRender(
+                id = ov.id, file = file, baseW = baseW, baseH = baseH,
+                startMs = ov.startMs, endMs = ov.endMs,
+                x = ov.x, y = ov.y, scaleX = ov.scaleX, scaleY = ov.scaleY,
+                rotation = ov.rotation, opacity = ov.opacity, zIndex = ov.zIndex,
+                keyframes = ov.keyframes,
+            )
+        }
+        return out
+    }
+
     /** Copies overlay content-URIs into cache files keyed by overlay id. */
     private fun copyOverlayFiles(context: Context, project: PhonkProject): Map<String, String> {
         val resolver = context.contentResolver
@@ -185,18 +276,59 @@ class ExportRunner(
         return out
     }
 
-    /** Picks a system font the bundled ffmpeg can load, or null. */
-    private fun findSystemFont(): String? {
-        val candidates = listOf(
-            "/system/fonts/Roboto-Regular.ttf",
-            "/system/fonts/DroidSans.ttf",
-            "/system/fonts/NotoSans-Regular.ttf",
-            "/system/fonts/RobotoCondensed-Regular.ttf",
-        )
-        for (p in candidates) {
-            if (File(p).exists()) return p
+    /**
+     * Rasterizes a text layer into a transparent PNG sized to its measured
+     * layout at the preview's font pixel size (fontSize * W / 1080), bold with
+     * the authored colour and drop shadow, so the export text matches the
+     * editor's rendered text.
+     */
+    private fun rasterizeText(layer: dev.phonk.editor.model.TextLayer, canvasW: Int, refW: Int): Rasterized? {
+        val fontPx = (layer.fontSize * canvasW / refW).coerceAtLeast(8f)
+        val paint = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = fontPx
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            color = layer.colorArgb.toInt()
+            setShadowLayer(3f, 0f, 2f, 0x8C000000.toInt())
         }
-        return null
+        return runCatching {
+            val layout = android.text.StaticLayout.Builder
+                .obtain(layer.text, 0, layer.text.length, paint, canvasW)
+                .setAlignment(android.text.Layout.Alignment.ALIGN_CENTER)
+                .setIncludePad(false)
+                .build()
+            val bw = layout.width.coerceAtLeast(1)
+            val bh = layout.height.coerceAtLeast(1)
+            val bmp = android.graphics.Bitmap.createBitmap(bw, bh, android.graphics.Bitmap.Config.ARGB_8888)
+            android.graphics.Canvas(bmp).let { layout.draw(it) }
+            val f = File(context.cacheDir, "text_${System.currentTimeMillis()}_${layer.id}.png")
+            f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            Rasterized(f.absolutePath, bw, bh)
+        }.getOrNull()
+    }
+
+    /**
+     * Rasterizes a label-only overlay (sticker/emoji/shape) centred on a
+     * square canvas matching the preview's 0.22 * min side box.
+     */
+    private fun rasterizeShape(ov: dev.phonk.editor.model.OverlayLayer, minSide: Int): Rasterized? {
+        val label = ov.label.ifBlank { "⬤" }
+        val glyph = if (ov.kind.equals("Emoji", ignoreCase = true) || label.length <= 4) label else "⬤"
+        val side = (minSide * 0.22f).roundToInt().coerceAtLeast(2)
+        return runCatching {
+            val bmp = android.graphics.Bitmap.createBitmap(side, side, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bmp)
+            val paint = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                textSize = side.toFloat()
+                textAlign = android.graphics.Paint.Align.CENTER
+                setShadowLayer(3f, 0f, 2f, 0x8C000000.toInt())
+            }
+            val fm = paint.fontMetrics
+            val baseline = side / 2f - (fm.ascent + fm.descent) / 2f
+            canvas.drawText(glyph, side / 2f, baseline, paint)
+            val f = File(context.cacheDir, "shape_${System.currentTimeMillis()}_${ov.id}.png")
+            f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            Rasterized(f.absolutePath, side, side)
+        }.getOrNull()
     }
 
     private fun saveToGallery(context: Context, file: File, config: ExportConfig): Uri {

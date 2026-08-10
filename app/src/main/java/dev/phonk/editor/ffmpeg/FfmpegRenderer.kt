@@ -1,7 +1,9 @@
 package dev.phonk.editor.ffmpeg
 
 import dev.phonk.editor.model.ClipSegment
+import dev.phonk.editor.model.ColorGrade
 import dev.phonk.editor.model.ExportConfig
+import dev.phonk.editor.model.GradeKeyframe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -112,11 +114,10 @@ class FfmpegRenderer(private val engine: FFmpegEngine) {
         videoDurationMs: Long,
         onProgress: (Float) -> Unit = {},
         colorGrade: ColorGrade? = null,
-        texts: List<dev.phonk.editor.model.TextLayer> = emptyList(),
-        overlays: List<dev.phonk.editor.model.OverlayLayer> = emptyList(),
-        overlayFiles: Map<String, String> = emptyMap(),
+        overlayRenders: List<OverlayRender> = emptyList(),
         transitionDurationMs: Long = 400L,
-        fontPath: String? = null,
+        keyframes: List<GradeKeyframe> = emptyList(),
+        keyframesEnabled: Boolean = false,
     ): RenderState = withContext(Dispatchers.IO) {
         if (!engine.available) {
             RenderState.Failed(
@@ -128,7 +129,7 @@ class FfmpegRenderer(private val engine: FFmpegEngine) {
             onProgress(0f)
             val args = FFmpegCommandBuilder.buildClip(
                 input, output, segments, config, hasAudio, effects, hwEncode,
-                colorGrade, texts, overlays, overlayFiles, transitionDurationMs, fontPath,
+                colorGrade, overlayRenders, transitionDurationMs, keyframes, keyframesEnabled,
             )
             cancelFlag.set(false)
             engine.run(args, cancelFlag) { seconds ->

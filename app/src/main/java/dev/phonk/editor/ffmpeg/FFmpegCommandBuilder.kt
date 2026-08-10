@@ -1,11 +1,20 @@
 package dev.phonk.editor.ffmpeg
 
 import dev.phonk.editor.model.ClipSegment
+import dev.phonk.editor.model.ColorGrade
 import dev.phonk.editor.model.EffectKind
 import dev.phonk.editor.model.ExportConfig
-import dev.phonk.editor.model.OverlayLayer
-import dev.phonk.editor.model.TextLayer
+import dev.phonk.editor.model.GradeKeyframe
+import dev.phonk.editor.model.OverlayFx
+import dev.phonk.editor.model.OverlayItem
+import dev.phonk.editor.model.OverlayKeyframe
+import dev.phonk.editor.model.evaluateColorGrade
+import dev.phonk.editor.model.evaluateOverlayFx
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /** A beat-aware effect trigger on the destination timeline. */
 data class EffectSpec(
@@ -15,11 +24,48 @@ data class EffectSpec(
     val amount: Float,
 )
 
-/** Color-grade offsets applied to the whole picture at render time. */
-data class ColorGrade(
-    val brightness: Float = 0f,
-    val contrast: Float = 0f,
-    val saturation: Float = 0f,
+/** A time-slice of the color grade (seconds on the destination timeline). */
+data class GradeWindow(
+    val startSec: Double,
+    val endSec: Double,
+    val grade: ColorGrade,
+)
+
+/**
+ * A fully-resolved overlay for the ffmpeg graph. Both text (rasterized to PNG
+ * ahead of time) and image/shape overlays funnel through this, so the export
+ * applies exactly the same position/scale/rotation/opacity/timing/zIndex the
+ * editor preview shows. Coordinates are normalized (0..1, 0.5,0.5 = centre of
+ * the content rect). [baseW]/[baseH] is the pixel size of the source at
+ * scale = 1.0 in export-resolution pixels.
+ */
+data class OverlayRender(
+    override val id: String,
+    val file: String,
+    val baseW: Int,
+    val baseH: Int,
+    override val startMs: Long,
+    override val endMs: Long,
+    override val x: Float,
+    override val y: Float,
+    override val scaleX: Float,
+    override val scaleY: Float,
+    override val rotation: Float,
+    override val opacity: Float,
+    override val zIndex: Int,
+    override val keyframes: List<OverlayKeyframe> = emptyList(),
+) : OverlayItem {
+    override val visible: Boolean get() = true
+    override val locked: Boolean get() = false
+    override val type: String get() = "Render"
+    override val label: String get() = id
+}
+
+/** A constant-transform slice of an overlay's lifetime (seconds). */
+data class OverlayWindow(
+    val startSec: Double,
+    val endSec: Double,
+    val fx: OverlayFx,
 )
 
 /**
@@ -32,7 +78,11 @@ data class ColorGrade(
  * then:
  *   [v0]...[vN]concat=n=N:v=1:a=0[cv]
  *   [a0]...[aN]concat=n=N:v=0:a=1[outa]
- *   [cv]scale..pad..setsar,fps{grade}{transitions}{texts}{overlays}[outv]
+ *   [cv]scale..pad..setsar,fps{grade}{transitions}{overlays}[outv]
+ *
+ * Overlay graphs chain in zIndex order:
+ *   [k:v]format=rgba,scale..pad..,scale..,rotate..,colorchannelmixer=..[qN]
+ *   [pN][qN]overlay=x=..:y=..:eof_action=repeat:enable='between(t,..,..)'[pN+1]
  */
 object FFmpegCommandBuilder {
 
@@ -40,10 +90,11 @@ object FFmpegCommandBuilder {
      * @param segments ordered source spans to cut and concatenate
      * @param effects beat-aligned effect triggers (usually from EffectScheduler)
      * @param colorGrade global brightness/contrast/saturation adjustments
-     * @param texts text overlays rendered with drawtext (requires [fontPath])
-     * @param overlays image overlays (each needs an entry in [overlayFiles])
-     * @param overlayFiles overlay id -> local file path (copied to cache already)
+     * @param overlayRenders resolved overlays (text rasterized, images copied);
+     *        each render must have a [OverlayRender.file] on disk already
      * @param transitionDurationMs flash window used at clip transitions
+     * @param keyframes grade automation keyframes on the destination timeline
+     * @param keyframesEnabled whether keyframe animation is active for export
      */
     fun buildClip(
         input: String,
@@ -54,11 +105,10 @@ object FFmpegCommandBuilder {
         effects: List<EffectSpec> = emptyList(),
         hwEncode: String? = null,
         colorGrade: ColorGrade? = null,
-        texts: List<TextLayer> = emptyList(),
-        overlays: List<OverlayLayer> = emptyList(),
-        overlayFiles: Map<String, String> = emptyMap(),
+        overlayRenders: List<OverlayRender> = emptyList(),
         transitionDurationMs: Long = 400L,
-        fontPath: String? = null,
+        keyframes: List<GradeKeyframe> = emptyList(),
+        keyframesEnabled: Boolean = false,
     ): List<String> {
         if (segments.isEmpty()) {
             return listOf("-y", "-f", "lavfi", "-i", "color=c=black:s=16x16:d=0.1",
@@ -73,15 +123,15 @@ object FFmpegCommandBuilder {
         }
         args.add("-i")
         args.add(input)
-        val localOverlays = overlays.filter { overlayFiles.containsKey(it.id) }
-        for (ov in localOverlays) {
+        val orderedRenders = orderedOverlays(overlayRenders)
+        for (r in orderedRenders) {
             args.add("-loop")
             args.add("1")
             args.add("-i")
-            args.add(overlayFiles.getValue(ov.id))
+            args.add(r.file)
         }
         args.add("-filter_complex")
-        args.add(buildFilterGraph(segments, config, hasAudio, effects, colorGrade, texts, localOverlays, transitionDurationMs, fontPath))
+        args.add(buildFilterGraph(segments, config, hasAudio, effects, colorGrade, orderedRenders, transitionDurationMs, keyframes, keyframesEnabled))
         args.add("-map")
         args.add("[outv]")
         if (hasAudio) {
@@ -121,10 +171,10 @@ object FFmpegCommandBuilder {
         hasAudio: Boolean,
         effects: List<EffectSpec> = emptyList(),
         colorGrade: ColorGrade? = null,
-        texts: List<TextLayer> = emptyList(),
-        overlays: List<OverlayLayer> = emptyList(),
+        overlayRenders: List<OverlayRender> = emptyList(),
         transitionDurationMs: Long = 400L,
-        fontPath: String? = null,
+        keyframes: List<GradeKeyframe> = emptyList(),
+        keyframesEnabled: Boolean = false,
     ): String {
         val sb = StringBuilder()
         val w = config.resolution.width
@@ -166,24 +216,215 @@ object FFmpegCommandBuilder {
         sb.append("[base]scale=").append(w).append(':').append(h)
             .append(":force_original_aspect_ratio=decrease,pad=").append(w).append(':').append(h)
             .append(":(ow-iw)/2:(oh-ih)/2,setsar=1,fps=").append(config.fps.fps)
-        if (colorGrade != null && (colorGrade.brightness != 0f || colorGrade.contrast != 0f || colorGrade.saturation != 0f)) {
-            val br = (colorGrade.brightness * 0.5).coerceIn(-0.5, 0.5)
-            val ct = (1.0 + colorGrade.contrast * 0.6).coerceIn(0.4, 1.9)
-            val sat = (1.0 + colorGrade.saturation * 0.7).coerceIn(0.0, 2.0)
-            sb.append(",eq=brightness=").append(fmt(br.toDouble()))
-                .append(":contrast=").append(fmt(ct))
-                .append(":saturation=").append(fmt(sat))
+        val windows = gradeWindows(colorGrade, keyframes, keyframesEnabled, segments)
+        windows.forEach { win ->
+            val enable = if (windowsUseEnable(win, segments)) "between(t,${fmt(win.startSec)},${fmt(win.endSec)})" else null
+            appendColorGrade(sb, win.grade, enable)
         }
         for (fx in effects) appendEffect(sb, fx, w, h)
+        appendClipEffects(sb, segments)
         appendTransitions(sb, segments, transitionDurationMs)
-        appendTextOverlays(sb, texts, fontPath, w, h)
-        if (overlays.isEmpty()) {
-            sb.append("[outv]")
-        } else {
-            sb.append("[p0]")
-            appendImageOverlays(sb, overlays)
-        }
+        val ordered = orderedOverlays(overlayRenders)
+        val totalMs = segments.maxOfOrNull { it.destEndMs } ?: 0L
+        appendOverlayGraphs(sb, ordered, w, h, totalMs)
         return sb.toString()
+    }
+
+    /**
+     * Drops renders that can never appear (no duration, missing file, empty
+     * canvas) and orders them by draw order (zIndex ascending) so the ffmpeg
+     * overlay chain composites bottom-to-top exactly like the preview.
+     */
+    internal fun orderedOverlays(renders: List<OverlayRender>): List<OverlayRender> =
+        renders.asSequence()
+            .filter { it.endMs > it.startMs && it.file.isNotBlank() && it.baseW > 0 && it.baseH > 0 }
+            .sortedBy { it.zIndex }
+            .toList()
+
+    /**
+     * Slices an overlay's lifetime into constant-transform windows for export.
+     * With no (or a single) keyframe a render exports with its static transform.
+     * With automation, the transform is sampled across the item window at a
+     * bounded step and each change becomes a separate windowed composite.
+     */
+    internal fun overlayWindows(render: OverlayRender, totalMs: Long): List<OverlayWindow> {
+        val start = render.startMs.coerceIn(0, totalMs)
+        val end = render.endMs.coerceIn(0, totalMs)
+        if (end <= start) return emptyList()
+        if (render.keyframes.size < 2) {
+            return listOf(OverlayWindow(start / 1000.0, end / 1000.0, evaluateOverlayFx(render, start)))
+        }
+        val spanStart = render.keyframes.minOf { it.atMs }.coerceIn(start, end)
+        val spanEnd = render.keyframes.maxOf { it.atMs }.coerceIn(start, end)
+        val spanMs = (spanEnd - spanStart).coerceAtLeast(1L)
+        val step = spanMs / 300 + 80
+        val out = ArrayList<OverlayWindow>()
+        var anchor = start
+        var cur = evaluateOverlayFx(render, anchor)
+        var next = anchor + step
+        while (next < end) {
+            val fx = evaluateOverlayFx(render, next)
+            if (fx != cur) {
+                out += OverlayWindow(anchor / 1000.0, next / 1000.0, cur)
+                anchor = next
+                cur = fx
+            }
+            next += step
+        }
+        out += OverlayWindow(anchor / 1000.0, end / 1000.0, cur)
+        return out
+    }
+
+    /**
+     * Emits a color grade as an ffmpeg filter chain, matching the same
+     * [ColorGrade] the preview consumes. Only core filters are used so the
+     * lightweight runtime binary can always render it.
+     *
+     *  - eq:        brightness (brightness + exposure), contrast, saturation,
+     *               per-channel gamma for temperature/tint
+     *  - boxblur:   uniform blur (blur != 0)
+     *  - vignette:  darkened corners (vignette != 0)
+     *  - noise:     film grain (grain != 0)
+     *  - unsharp:   sharpness (sharpness != 0)
+     *
+     * When [enableExpr] is supplied (a raw ffmpeg source expression without the
+     * quotes) every emitted filter is windowed with :enable='...'. This is how
+     * keyframe animation is exported: one grade chain per timeline slice.
+     */
+    private fun appendColorGrade(sb: StringBuilder, colorGrade: ColorGrade?, enableExpr: String? = null) {
+        if (colorGrade == null) return
+        val en = if (enableExpr != null) ":enable='$enableExpr'" else ""
+        var emitted = false
+        val brightness = colorGrade.brightness + colorGrade.exposure * 0.5f
+        val ct0 = 1.0 + colorGrade.contrast * 0.6 + colorGrade.highlights * 0.15
+        val ct = ct0.coerceIn(0.4, 1.9)
+        val sat = (1.0 + colorGrade.saturation * 0.7).coerceIn(0.05, 2.0)
+        val hasGrade = abs(brightness) > 0.0005f || abs(colorGrade.contrast) > 0.0005f ||
+            abs(colorGrade.saturation) > 0.0005f || abs(colorGrade.temperature) > 0.0005f ||
+            abs(colorGrade.tint) > 0.0005f || abs(colorGrade.highlights) > 0.0005f ||
+            abs(colorGrade.shadows) > 0.0005f || abs(colorGrade.fade) > 0.0005f
+        if (hasGrade) {
+            val br = (brightness + colorGrade.shadows * 0.3f + colorGrade.fade * 0.35f)
+                .coerceIn(-0.5f, 0.6f)
+            val finalSat = sat * (1f - colorGrade.fade * 0.5f)
+            val gammaR = (1.0 + colorGrade.temperature * 0.18 - colorGrade.tint * 0.1).coerceIn(0.7, 1.3)
+            val gammaG = (1.0 + colorGrade.tint * 0.18).coerceIn(0.7, 1.3)
+            val gammaB = (1.0 - colorGrade.temperature * 0.18 - colorGrade.tint * 0.1).coerceIn(0.7, 1.3)
+            sb.append(",eq=brightness=").append(fmt(br.toDouble()))
+                .append(":contrast=").append(fmt(ct))
+                .append(":saturation=").append(fmt(finalSat.toDouble()))
+                .append(":gamma_r=").append(fmt(gammaR))
+                .append(":gamma_g=").append(fmt(gammaG))
+                .append(":gamma_b=").append(fmt(gammaB))
+            emitted = true
+        }
+        if (abs(colorGrade.blur) > 0.0005f) {
+            val r = (colorGrade.blur * 8.0 + 0.5).coerceAtMost(20.0)
+            sb.append(",boxblur=luma_radius=").append(fmt(r)).append(":luma_power=1")
+            emitted = true
+        }
+        if (abs(colorGrade.vignette) > 0.0005f) {
+            val angle = (Math.PI / 5.0 * (1.0 - colorGrade.vignette * 0.8)).coerceIn(Math.PI / 18.0, Math.PI / 2.0)
+            sb.append(",vignette=angle=").append(fmt(angle))
+            emitted = true
+        }
+        if (abs(colorGrade.grain) > 0.0005f) {
+            sb.append(",noise=alls=").append(fmt(colorGrade.grain * 26.0)).append(":allf=t+u")
+            emitted = true
+        }
+        if (abs(colorGrade.sharpness) > 0.0005f) {
+            sb.append(",unsharp=luma_msize_x=5:luma_msize_y=5:luma_amount=")
+                .append(fmt((colorGrade.sharpness * 0.6).toDouble()))
+            emitted = true
+        }
+        if (emitted && en.isNotEmpty()) {
+            sb.append(en)
+        }
+    }
+
+    /**
+     * Slices the destination timeline into [GradeWindow]s that reproduce the
+     * keyframe interpolation at export. When automation is off (or too few
+     * keyframes) a single full-range window with the base grade is returned so
+     * the exported chain matches the classic (non-animated) behavior exactly.
+     *
+     * Sampling step shrinks with the animated span and is capped so the graph
+     * never exceeds ~500 filters regardless of project length.
+     */
+    private fun gradeWindows(
+        base: ColorGrade?,
+        keyframes: List<GradeKeyframe>,
+        enabled: Boolean,
+        segments: List<ClipSegment>,
+    ): List<GradeWindow> {
+        val totalMs = segments.maxOfOrNull { it.destEndMs } ?: 0L
+        val fallback = GradeWindow(0.0, totalMs / 1000.0, base ?: ColorGrade())
+        if (totalMs <= 0L || !enabled || keyframes.size < 2) return listOf(fallback)
+
+        val spanStart = keyframes.minOf { it.atMs }.coerceIn(0, totalMs)
+        val spanEnd = keyframes.maxOf { it.atMs }.coerceIn(0, totalMs)
+        val spanMs = (spanEnd - spanStart).coerceAtLeast(1L)
+        val step = spanMs / 500 + 50
+        val start = base ?: ColorGrade()
+        val out = ArrayList<GradeWindow>()
+        var anchor = 0L
+        var cur = evaluateColorGrade(start, keyframes, anchor, true)
+        var next = step
+        while (next < totalMs) {
+            val g = evaluateColorGrade(start, keyframes, next, true)
+            if (g != cur) {
+                out += GradeWindow(anchor / 1000.0, next / 1000.0, cur)
+                anchor = next
+                cur = g
+            }
+            next += step
+        }
+        out += GradeWindow(anchor / 1000.0, totalMs / 1000.0, cur)
+        return out
+    }
+
+    /** A window only needs the enable guard when it isn't the full timeline. */
+    private fun windowsUseEnable(win: GradeWindow, segments: List<ClipSegment>): Boolean {
+        val totalSec = segments.maxOfOrNull { it.destEndMs }?.let { it / 1000.0 } ?: 0.0
+        return !(win.startSec <= 0.001 && win.endSec >= totalSec - 0.001)
+    }
+
+    /** Per-clip effects attached to a timeline segment (from the Effects panel).
+     *  Each is windowed to the segment's destination time range. */
+    private fun appendClipEffects(sb: StringBuilder, segments: List<ClipSegment>) {
+        for (seg in segments) {
+            val kind = seg.effect
+            if (kind == EffectKind.NONE) continue
+            val t0 = seg.destStartMs / 1000.0
+            val t1 = seg.destEndMs / 1000.0
+            val amt = seg.effectStrength.coerceIn(0f, 1.5f)
+            when (kind) {
+                EffectKind.FLASH -> {
+                    sb.append(",eq=brightness=0.3:enable='between(t,")
+                        .append(fmt(t0)).append(",").append(fmt(t1))
+                        .append(")*lt(mod(t,0.6),0.08)'")
+                }
+                EffectKind.BRIGHTNESS -> {
+                    sb.append(",eq=brightness=").append(fmt((amt * 0.5).coerceAtLeast(0.05)))
+                        .append(":enable='between(t,").append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+                }
+                EffectKind.CONTRAST -> {
+                    sb.append(",eq=contrast=").append(fmt((amt * 0.5 + 1.0).coerceAtMost(1.8)))
+                        .append(":enable='between(t,").append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+                }
+                EffectKind.GLITCH -> {
+                    sb.append(",eq=saturation=0.15:enable='between(t,").append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+                    sb.append(",hue=H=0.03*sin(2*PI*t*30):enable='between(t,").append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+                }
+                EffectKind.RGBSPLIT -> {
+                    sb.append(",eq=saturation=0.3:enable='between(t,").append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+                    sb.append(",hue=H=0.02*sin(2*PI*t*24):enable='between(t,").append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+                }
+                // ZOOM/SHAKE/BLUR/FADE are not representable in this build's
+                // filter set; skipped so export always completes.
+                else -> Unit
+            }
+        }
     }
 
     /** Flash window at clip boundaries that carry a transition. */
@@ -198,36 +439,55 @@ object FFmpegCommandBuilder {
         }
     }
 
-    private fun appendTextOverlays(sb: StringBuilder, texts: List<TextLayer>, fontPath: String?, w: Int, h: Int) {
-        if (fontPath.isNullOrBlank()) return
-        texts.forEachIndexed { i, t ->
-            val t0 = t.startMs / 1000.0
-            val t1 = t.endMs / 1000.0
-            if (t1 <= t0) return@forEachIndexed
-            val textEsc = escapeDrawText(t.text)
-            val fontSize = t.fontSize.toInt().coerceIn(8, 200)
-            val alpha = (t.opacity.coerceIn(0f, 1f) * 255).toInt()
-            val colorHex = String.format(Locale.US, "0x%02X%06X", alpha, (t.colorArgb and 0xFFFFFF))
-            sb.append(",drawtext=fontfile=").append(fontPath)
-                .append(":text='").append(textEsc).append("'")
-                .append(":fontsize=").append(fontSize)
-                .append(":fontcolor=").append(colorHex)
-                .append(":x=(w-text_w)/2:y=(h-text_h)/2")
-                .append(":enable='between(t,").append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+    /**
+     * Chains every overlay composite bottom-to-top. Each render becomes an
+     * rgba stream that is (1) fitted into its base box, (2) scaled by the
+     * authored transform, (3) rotated (transparent fill), (4) opacity scaled,
+     * then composited at the normalized centre minus half the rotated bbox.
+     * With no composites the base stream is labelled [outv] directly.
+     */
+    private fun appendOverlayGraphs(sb: StringBuilder, renders: List<OverlayRender>, w: Int, h: Int, totalMs: Long) {
+        val composites = ArrayList<Pair<Int, OverlayWindow>>()
+        renders.forEachIndexed { k, render ->
+            overlayWindows(render, totalMs).forEach { composites += k to it }
         }
-    }
-
-    private fun appendImageOverlays(sb: StringBuilder, overlays: List<OverlayLayer>) {
-        if (overlays.isEmpty()) return
+        if (composites.isEmpty()) {
+            sb.append("[outv]")
+            return
+        }
+        sb.append("[p0]")
         var prev = "p0"
-        overlays.forEachIndexed { i, ov ->
-            val t0 = ov.startMs / 1000.0
-            val t1 = ov.endMs / 1000.0
-            if (t1 <= t0) return@forEachIndexed
-            val isLast = i == overlays.lastIndex
-            val next = if (isLast) "outv" else "p${i + 1}"
-            sb.append(";[").append(prev).append("][").append(i + 1).append(":v]overlay=x=0:y=0:eof_action=repeat:enable='between(t,")
-                .append(fmt(t0)).append(",").append(fmt(t1)).append(")'[").append(next).append("]")
+        composites.forEachIndexed { idx, (k, win) ->
+            val render = renders[k]
+            val next = if (idx == composites.lastIndex) "outv" else "p${idx + 1}"
+            val sw = render.baseW * win.fx.scaleX
+            val sh = render.baseH * win.fx.scaleY
+            sb.append(";[${k + 1}:v]format=rgba,scale=").append(render.baseW).append(':').append(render.baseH)
+                .append(":force_original_aspect_ratio=decrease,pad=").append(render.baseW).append(':').append(render.baseH)
+                .append(":(ow-iw)/2:(oh-ih)/2:color=black@0,scale=")
+                .append(sw.roundToInt().coerceAtLeast(1)).append(':').append(sh.roundToInt().coerceAtLeast(1))
+            val rot = win.fx.rotation
+            if (abs(rot) > 0.01f) {
+                sb.append(",rotate=").append(fmt(Math.toRadians(rot.toDouble()))).append(":c=black@0")
+            }
+            val op = win.fx.opacity.coerceIn(0f, 1f)
+            if (op < 0.999f) {
+                sb.append(",colorchannelmixer=aa=").append(fmt(op.toDouble()))
+            }
+            sb.append("[q").append(idx).append("]")
+            // Position the centre at (fx.x * W, fx.y * H); offset the
+            // top-left by half the ROTATED bounding box.
+            val rad = Math.toRadians(rot.toDouble())
+            val c = abs(cos(rad))
+            val s = abs(sin(rad))
+            val bw = sw * c + sh * s
+            val bh = sw * s + sh * c
+            val ox = (win.fx.x * w - bw / 2.0).roundToInt()
+            val oy = (win.fx.y * h - bh / 2.0).roundToInt()
+            sb.append("[").append(prev).append("][q").append(idx).append("]overlay=x=").append(ox)
+                .append(":y=").append(oy).append(":eof_action=repeat:enable='between(t,")
+                .append(fmt(win.startSec)).append(",").append(fmt(win.endSec)).append(")'[")
+                .append(next).append("]")
             prev = next
         }
     }
@@ -270,21 +530,6 @@ object FFmpegCommandBuilder {
         }
         out.add(s.coerceIn(0.5, 100.0))
         return out
-    }
-
-    /** Escape a string for drawtext (two layers: graph quoting + drawtext). */
-    private fun escapeDrawText(text: String): String {
-        val sb = StringBuilder()
-        for (ch in text) {
-            when (ch) {
-                '\\' -> sb.append("\\\\")
-                '\'' -> sb.append("\\'")
-                ':' -> sb.append("\\:")
-                '%' -> sb.append("%%")
-                else -> sb.append(ch)
-            }
-        }
-        return sb.toString()
     }
 
     /** Hallucination guard: format without trailing junk. */

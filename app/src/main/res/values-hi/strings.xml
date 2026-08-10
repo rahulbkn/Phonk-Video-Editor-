@@ -49,6 +49,15 @@
     <string name="language_system">सिस्टम</string>
     <string name="language_english">English</string>
     <string name="language_hindi">हिन्दी</string>
+    <string name="developer">डेवलपर</string>
+    <string name="debug_screen_title">डेवलपर</string>
+    <string name="debug_overlays">डीबग ओवरले</string>
+    <string name="debug_overlays_enabled">ओवरले डायग्नोस्टिक्स दिखाएँ</string>
+    <string name="debug_overlays_hint">एडिटर प्रीव्यू पर फ़ॉन्ट, संरेखण, लेयर विंडो और प्लेहेड रीडआउट। केवल डेवलपर के लिए; कभी एक्सपोर्ट नहीं होता।</string>
+    <string name="debug_dev_entries">डेवलपर प्रविष्टियाँ</string>
+    <string name="debug_show_dev_entries">डेवलपर प्रविष्टियाँ दिखाएँ</string>
+    <string name="debug_dev_entries_hint">डेवलपर कार्ड को सेटिंग्स से छिपाता है ताकि सामान्य उपयोगकर्ता उसे न देखें।</string>
+    <string name="debug_revealed">डेवलपर मोड सक्षम</string>
 
     <string name="crash_title">ऐप क्रैश हो गया</string>
     <string name="crash_subtitle">ऐप अप्रत्याशित रूप से बंद हो गया। क्रैश विवरण नीचे उपलब्ध है।</string>
@@ -125,4 +134,13 @@
     <string name="crash_no">नहीं</string>
     <string name="crash_true">सही</string>
     <string name="crash_false">गलत</string>
+
+    <string name="overlay_duplicate">ओवरले डुप्लिकेट करें</string>
+    <string name="overlay_lock">ओवरले लॉक करें</string>
+    <string name="overlay_unlock">ओवरले अनलॉक करें</string>
+    <string name="overlay_hide">ओवरले छिपाएँ</string>
+    <string name="overlay_show">ओवरले दिखाएँ</string>
+    <string name="overlay_front">सबसे ऊपर लाएँ</string>
+    <string name="overlay_back">सबसे नीचे भेजें</string>
+    <string name="overlay_edit">टेक्स्ट संपादित करें</string>
 </resources>
