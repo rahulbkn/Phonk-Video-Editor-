@@ -735,7 +735,7 @@ class EditorViewModel(
         val idx = p.clips.indexOfFirst { ms in it.destStartMs until it.destEndMs }
         if (idx < 0) return
         val clip = p.clips[idx]
-        val splitPoint = ms.coerceIn(clip.destStartMs + 1, clip.destEndMs - 1)
+        val splitPoint = splitPointFor(clip.destStartMs, clip.destEndMs, ms) ?: return
         val srcRatio = (splitPoint - clip.destStartMs).toFloat() / (clip.destEndMs - clip.destStartMs).coerceAtLeast(1)
         val srcSplit = clip.sourceStartMs + ((clip.sourceEndMs - clip.sourceStartMs) * srcRatio).toLong()
         val left = clip.copy(sourceEndMs = srcSplit, destEndMs = splitPoint)
@@ -1009,4 +1009,15 @@ fun playPauseDecision(
     } else {
         PlayPauseDecision(shouldSeekToZero = false, newIsPlaying = true)
     }
+}
+
+/**
+ * Computes the split position for a clip that starts at [destStartMs] and ends
+ * at [destEndMs], splitting at [ms]. Returns null when the clip is too short to
+ * split (needs at least 2ms so the coerce range is not empty), which would
+ * otherwise throw IllegalArgument cast on clips trimmed down to ~1ms.
+ */
+internal fun splitPointFor(destStartMs: Long, destEndMs: Long, ms: Long): Long? {
+    if (destEndMs - destStartMs < 2) return null
+    return ms.coerceIn(destStartMs + 1, destEndMs - 1)
 }
