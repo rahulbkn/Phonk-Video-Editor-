@@ -245,6 +245,64 @@ class FFmpegCommandBuilderTest {
         assertTrue("no durability crash on multiple windows", graph.contains("concat=n="))
     }
 
+    @Test
+    fun everyFilterInWindowedGradeCarriesEnableGate() {
+        // A keyframed window whose grade emits multiple filter categories
+        // (eq + boxblur + noise): every emitted filter must be time-gated with
+        // the same :enable='between(...)' expression, not just the last one.
+        val keyframes = listOf(
+            dev.phonk.editor.model.GradeKeyframe(
+                0L,
+                dev.phonk.editor.model.ColorGrade(brightness = 0.2f, blur = 0.5f, grain = 0.25f),
+            ),
+            dev.phonk.editor.model.GradeKeyframe(
+                1000L,
+                dev.phonk.editor.model.ColorGrade(brightness = 0.5f, blur = 0.8f, grain = 0.5f),
+            ),
+        )
+        val graph = FFmpegCommandBuilder.buildFilterGraph(
+            listOf(segment), config, true,
+            colorGrade = dev.phonk.editor.model.ColorGrade(),
+            keyframes = keyframes, keyframesEnabled = true,
+        )
+        val eq = countOccurrences(graph, ",eq=brightness=")
+        val blur = countOccurrences(graph, ",boxblur=luma_radius=")
+        val noise = countOccurrences(graph, ",noise=alls=")
+        val gates = countOccurrences(graph, ":enable='between(t,")
+        assertTrue("windowed grade must split into multiple slices", eq >= 2)
+        assertEquals("each window emits eq, boxblur and noise in lockstep", eq, blur)
+        assertEquals("each window emits eq, boxblur and noise in lockstep", eq, noise)
+        assertEquals(
+            "every emitted filter carries the enable gate (gates == filters)",
+            gates, eq * 3,
+        )
+        assertTrue("eq gate precedes boxblur gate", graph.indexOf(",boxblur=") > graph.indexOf(",eq=brightness="))
+        assertTrue("boxblur gate precedes noise gate", graph.indexOf(",noise=alls=") > graph.indexOf(",boxblur="))
+        assertTrue("last noise is still gated", graph.lastIndexOf(":enable='between(t,") > graph.lastIndexOf(",noise=alls="))
+    }
+
+    @Test
+    fun staticMultiFilterGradeHasNoEnableGates() {
+        // Non-windowed (static) grades must be unchanged: filters emit in the
+        // same order with no :enable gate anywhere.
+        val grade = dev.phonk.editor.model.ColorGrade(
+            brightness = 0.2f,
+            blur = 0.5f,
+            grain = 0.25f,
+        )
+        val graph = FFmpegCommandBuilder.buildFilterGraph(
+            listOf(segment), config, true,
+            effects = emptyList(),
+            colorGrade = grade,
+        )
+        assertTrue("static grade emits eq", graph.contains("eq=brightness="))
+        assertTrue("static grade emits boxblur", graph.contains("boxblur=luma_radius="))
+        assertTrue("static grade emits noise", graph.contains("noise=alls="))
+        assertFalse("static grade carries no time gate", graph.contains(":enable='"))
+        assertTrue("ordering is preserved", graph.indexOf("boxblur=") > graph.indexOf("eq=brightness="))
+        assertTrue("ordering is preserved", graph.indexOf("noise=alls=") > graph.indexOf("boxblur="))
+    }
+
     private fun countOccurrences(haystack: String, needle: String): Int {
         var count = 0
         var idx = haystack.indexOf(needle)
