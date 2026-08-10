@@ -24,6 +24,12 @@ class EditEngine {
     val canUndo: Boolean get() = undoStack.isNotEmpty()
     val canRedo: Boolean get() = redoStack.isNotEmpty()
 
+    /** Clears all undo/redo history, e.g. when switching to a different project. */
+    fun clear() {
+        undoStack.clear()
+        redoStack.clear()
+    }
+
     /**
      * Applies [action] and records an undo/redo entry. When [key] matches the
      * top undo entry (e.g. the same slider being dragged continuously), the

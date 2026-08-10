@@ -53,6 +53,50 @@ class EditEngineTest {
     }
 
     @Test
+    fun clearResetsUndoRedoHistoryAcrossProjects() {
+        val engine = EditEngine()
+        // Project A history (same merge key as B will use).
+        val projA = PhonkProject(id = "projA")
+        val aEdited = engine.apply(projA, "grade:BRIGHTNESS") { it.copy(name = "A edited") }
+        assertEquals("A edited", aEdited.name)
+        assertTrue(engine.canUndo)
+
+        // Switch to project B: history must be wiped, including redo.
+        engine.clear()
+        assertFalse(engine.canUndo)
+        assertFalse(engine.canRedo)
+
+        // A fresh edit on B must NOT coalesce into A's entry and must not
+        // resurrect A's history.
+        val projB = PhonkProject(id = "projB")
+        val bEdited = engine.apply(projB, "grade:BRIGHTNESS") { it.copy(name = "B edited") }
+        assertEquals("B edited", bEdited.name)
+        assertFalse(engine.canRedo)
+
+        // Undo restores B's own before-snapshot, not A's stale one.
+        val undoneB = engine.undo(bEdited)
+        assertEquals("Untitled", undoneB.name)
+        assertFalse(engine.canUndo)
+
+        // Redo re-applies only B's edit.
+        val redoneB = engine.redo(undoneB)
+        assertEquals("B edited", redoneB.name)
+    }
+
+    @Test
+    fun clearLeavesEngineReusableForFreshEdits() {
+        val engine = EditEngine()
+        engine.apply(PhonkProject(id = "A"), "grade:BRIGHTNESS") { it.copy(name = "A") }
+        engine.clear()
+        assertFalse(engine.canUndo)
+
+        // Undo/redo on a project with no history is a no-op.
+        val untouched = engine.undo(PhonkProject(id = "B"))
+        assertEquals("Untitled", untouched.name)
+        assertEquals("Untitled", engine.redo(untouched).name)
+    }
+
+    @Test
     fun distinctKeysKeepSeparateUndoSteps() {
         val engine = EditEngine()
         var p = engine.apply(PhonkProject(), "a") { it.copy(name = "1") }

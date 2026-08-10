@@ -67,6 +67,13 @@ class EditorViewModel(
     /** Project state captured at the start of a drag gesture (one undo entry). */
     private var overlayGestureStart: PhonkProject? = null
 
+    /** Decides whether a newly set project is a real switch vs. the same project
+     *  being re-emitted/reloaded, so per-project state is only wiped on a switch. */
+    private val projectTracker = ProjectSwitchTracker()
+
+    /** Identity of the project an in-flight analysis run belongs to. */
+    private var analysisProjectId: String? = null
+
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
@@ -84,6 +91,13 @@ class EditorViewModel(
         viewModelScope.launch {
             analysisManager.state.collect { s ->
                 if (s is AnalysisState.Done) {
+                    val target = analysisProjectId
+                    if (target != projectTracker.currentIdentity) {
+                        // Stale result: either no analysis is in flight for the current
+                        // project, or the result belongs to a previous project. Never
+                        // apply it to the currently loaded project.
+                        return@collect
+                    }
                     _analysis.value = s.result
                     updateProject {
                         it.copy(
@@ -125,6 +139,16 @@ class EditorViewModel(
     }
 
     fun setProject(p: PhonkProject) {
+        if (projectTracker.onProjectSet(projectIdentity(p))) {
+            // Genuine switch to a different project: wipe every piece of state that
+            // belongs to the previous project so it cannot leak into the new one.
+            editEngine.clear()
+            overlayGestureStart = null
+            _analysis.value = null
+            _selectedOverlayId.value = null
+            analysisManager.cancel()
+            analysisProjectId = null
+        }
         _project.value = p
         if (p.beats.isNotEmpty()) {
             _analysis.value = AnalysisResult(
@@ -153,7 +177,9 @@ class EditorViewModel(
 
     fun beginAnalysis() {
         val p = _project.value ?: return
-        analysisManager.analyze(Uri.parse(p.audioUri ?: p.videoUri ?: return))
+        val uri = Uri.parse(p.audioUri ?: p.videoUri ?: return)
+        analysisProjectId = projectIdentity(p)
+        analysisManager.analyze(uri)
     }
 
     /** Imports a video URI and (re)builds a single full-length clip. */
@@ -833,3 +859,24 @@ class EditorViewModel(
             } else it
         }
 }
+
+/**
+ * Reports whether [identity] marks a genuine project switch (vs. the same project
+ * being re-emitted/reloaded), so per-project editor state is only wiped on an
+ * actual switch. Extracted into a plain-JUnit-testable seam.
+ */
+class ProjectSwitchTracker {
+    private var current: String? = null
+
+    val currentIdentity: String? get() = current
+
+    fun onProjectSet(identity: String): Boolean {
+        val switched = current != identity
+        current = identity
+        return switched
+    }
+}
+
+/** Stable identity used to tell projects apart across editor sessions. */
+fun projectIdentity(p: PhonkProject): String =
+    p.id.ifBlank { p.videoUri ?: p.audioUri ?: p.name }
