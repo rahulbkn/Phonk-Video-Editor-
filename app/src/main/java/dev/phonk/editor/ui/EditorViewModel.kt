@@ -892,7 +892,6 @@ class EditorViewModel(
         }
 }
 
-<<<<<<< HEAD
 /**
  * Tracks the pre-gesture project snapshot for a single overlay transform drag.
  *
