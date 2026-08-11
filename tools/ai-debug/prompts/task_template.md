@@ -5,7 +5,7 @@ Repository: {repo}
 Branch: {branch}
 Attempt: {attempt} of {max_attempts}
 
-## Firebase Test Lab failure
+## CI verification failure
 
 Status: {status}
 Device: {device}
@@ -39,7 +39,7 @@ Execution ID: {execution_id}
    `.ai-debug/attempt-{attempt}.md`.
 
 If you cannot identify a genuine, fixable root cause (e.g. the failure looks
-like a Firebase infrastructure issue, a flaky device, or something outside the
+like a CI infrastructure issue, a flaky environment, or something outside the
 app's code), say so explicitly instead of making a speculative change.
 
 This is attempt {attempt} of a maximum of {max_attempts}. If this is the final
