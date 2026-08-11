@@ -83,9 +83,17 @@ class Worker:
         if main_run:
             candidates.append(("main", main_run))
 
+        # recent_failed_runs returns newest-first, so the first occurrence of a
+        # fix branch is its newest failed run; drop older ones to avoid two
+        # jobs racing on the same branch (both would clone/edit/push it).
+        newest_per_branch: set[str] = set()
         for run in gh.recent_failed_runs(repo, workflow=workflow_name,
                                          branch_prefix="feature/ai-fix-"):
-            candidates.append((run["headBranch"], run))
+            branch = run["headBranch"]
+            if branch in newest_per_branch:
+                continue
+            newest_per_branch.add(branch)
+            candidates.append((branch, run))
 
         seen: set[str] = set()
         for branch, run in candidates:
@@ -137,6 +145,15 @@ class Worker:
                     job.repository, str(job.data.get("run_id", job.job_id)), tmp)
                 if fetched.get("status") == "failed":
                     summary = {**summary, **fetched}
+                    # Re-classify with the real failure text: the enqueue-time
+                    # default (GENERAL_DEBUGGING) is only claimed by a couple of
+                    # models, while the actual failure (e.g. a unit-test
+                    # assertion) routes to a wider, healthier model pool.
+                    task = classify_task(json.dumps(summary))
+                    job.data["currentTask"] = task
+                    summary["task"] = task
+                    job.data["summary"] = summary
+                    self.store.save(job)
             result = run_orchestrator_job(self.cfg, job, summary, str(job.data.get("run_id", job.job_id)))
             status = "SUCCESS" if result.get("status") == "pushed_for_ci_verification" else result.get("status", "FAILED")
             job.touch(status=status, result=result)
@@ -167,7 +184,7 @@ def run_poller_forever(
     print(f"[JOB] poller started for {repo} every {interval_seconds}s", flush=True)
     while True:
         try:
-            n = worker.poll_for_failures(repo, workflow=workflow)
+            n = worker.poll_for_failures(repo, workflow_name=workflow)
             if n:
                 print(f"[JOB] enqueued {n} failed run(s)", flush=True)
         except Exception as exc:  # noqa: BLE001

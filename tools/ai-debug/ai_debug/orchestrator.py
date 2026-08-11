@@ -74,7 +74,7 @@ def _clone_repo(workdir: Path, repo: str, branch: str) -> Path:
     _sh(["git", "config", "user.email", "opencode-debug-bot@users.noreply.github.com"], cwd=repo_dir)
     if gh.is_fix_branch(branch):
         _sh(["git", "fetch", "origin", branch], cwd=repo_dir)
-        _sh(["git", "checkout", branch], cwd=repo_dir)
+        _sh(["git", "checkout", "-b", branch, "FETCH_HEAD"], cwd=repo_dir)
     _write_local_properties(repo_dir)
     return repo_dir
 

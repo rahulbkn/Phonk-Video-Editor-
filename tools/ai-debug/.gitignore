@@ -11,3 +11,6 @@ jobs/
 # Local test artifacts
 ci-results/
 testlab-*/
+
+# Secrets
+.ai-debug.env

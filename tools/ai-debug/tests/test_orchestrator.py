@@ -245,6 +245,55 @@ class OrchestratorTest(unittest.TestCase):
             self.assertEqual(result["attempts"], 1)
 
 
+class CloneRepoTest(unittest.TestCase):
+    """Regression: _clone_repo must checkout a fetched fix branch.
+
+    `git fetch origin <branch>` only writes FETCH_HEAD; `git checkout
+    <branch>` then fails with 'pathspec did not match'. The orchestrator must
+    use `git checkout -b <branch> FETCH_HEAD` so retry jobs work.
+    """
+
+    def test_clone_fix_branch(self):
+        from ai_debug.orchestrator import _clone_repo
+        from ai_debug import github as gh
+
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            seed, remote = _seed_repo(tmp)
+
+            # create a fix branch on the remote with one extra commit
+            _git(seed, "checkout", "-q", "-b", "feature/ai-fix-abc")
+            (seed / "B.kt").write_text("fun b() {}\n")
+            _git(seed, "add", ".")
+            _git(seed, "commit", "-q", "-m", "add B")
+            _git(seed, "push", "-q", "-u", "origin", "feature/ai-fix-abc")
+
+            os.environ["GITHUB_TOKEN"] = "fake-token"
+            os.environ["AI_DEBUG_ANDROID_SDK"] = "/fake/sdk"
+            os.environ["AI_DEBUG_CMAKE_DIR"] = "/fake/cmake"
+
+            # Route the github.com clone URL to our local bare remote so no
+            # network is touched; everything after clone runs for real git.
+            real_run = subprocess.run
+
+            def _rewrite(args, **kwargs):
+                args = list(args)
+                if len(args) >= 5 and args[0] == "git" and args[1] == "clone":
+                    args[4] = str(remote)
+                return real_run(args, **kwargs)
+
+            with patch("ai_debug.orchestrator.subprocess.run", side_effect=_rewrite), \
+                 patch.object(gh, "is_fix_branch", side_effect=lambda b: b.startswith("feature/ai-fix-")):
+                workdir = tmp / "work"
+                workdir.mkdir()
+                repo_dir = _clone_repo(workdir, "owner/repo", "feature/ai-fix-abc")
+
+            branch = _git(repo_dir, "branch", "--show-current").stdout.strip()
+            self.assertEqual(branch, "feature/ai-fix-abc")
+            self.assertTrue((repo_dir / "B.kt").exists())
+            self.assertTrue((repo_dir / "local.properties").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
 

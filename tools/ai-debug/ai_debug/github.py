@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -128,7 +129,7 @@ def create_issue(repo: str, title: str, body: str) -> str:
 # ---------- workflow runs (polling) ----------
 
 def latest_failed_run_for_branch(repo: str, branch: str, workflow: str | None = None) -> dict[str, Any] | None:
-    url = f"{API}/actions/runs?branch={branch}&status=failure&per_page=1"
+    url = f"{API}/repos/{repo}/actions/runs?branch={branch}&status=completed&conclusion=failure&per_page=1"
     if workflow:
         url += f"&name={workflow}"
     try:
@@ -152,7 +153,7 @@ def recent_failed_runs(repo: str, workflow: str | None = None,
                        branch_prefix: str | None = None, limit: int = 10) -> list[dict[str, Any]]:
     """List recent failed runs, optionally filtered to a branch prefix
     (e.g. 'feature/ai-fix-') so the worker can pick up retry failures."""
-    url = f"{API}/actions/runs?status=failure&per_page={limit}"
+    url = f"{API}/repos/{repo}/actions/runs?status=completed&conclusion=failure&per_page={limit}"
     if workflow:
         url += f"&name={workflow}"
     try:
@@ -179,6 +180,25 @@ def workflow_run_url(repo: str, run_id: str) -> str:
     return f"https://github.com/{repo}/actions/runs/{run_id}"
 
 
+class _RedirectNoAuth(urllib.request.HTTPRedirectHandler):
+    """Follow redirects but drop the Authorization header on host change.
+
+    GitHub's artifact-download endpoint 302s to Azure Blob Storage; urllib
+    re-sends the GitHub token to the blob host, which rejects it with 401
+    (the same request succeeds via curl, which strips auth cross-host).
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req is None:
+            return None
+        old_host = urllib.parse.urlparse(req.full_url).netloc
+        new_host = urllib.parse.urlparse(newurl).netloc
+        if old_host != new_host:
+            new_req.remove_header("Authorization")
+        return new_req
+
+
 def download_run_artifacts(repo: str, run_id: str, dest: Path | str) -> None:
     """Download workflow run artifacts (zip) using the REST API."""
     url = f"{API}/repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100"
@@ -186,6 +206,7 @@ def download_run_artifacts(repo: str, run_id: str, dest: Path | str) -> None:
     dest_path = Path(dest)
     dest_path.mkdir(parents=True, exist_ok=True)
     token = _token()
+    opener = urllib.request.build_opener(_RedirectNoAuth())
     for artifact in data.get("artifacts", []):
         dl_url = artifact.get("archive_download_url")
         if not dl_url:
@@ -194,7 +215,7 @@ def download_run_artifacts(repo: str, run_id: str, dest: Path | str) -> None:
         req.add_header("Authorization", f"Bearer {token}")
         req.add_header("User-Agent", "phonk-ai-debug")
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with opener.open(req, timeout=120) as resp:
                 out = dest_path / f"{artifact['name']}.zip"
                 out.write_bytes(resp.read())
         except (urllib.error.HTTPError, urllib.error.URLError, OSError) as exc:
@@ -213,11 +234,15 @@ def fetch_run_summary(repo: str, run_id: str, tmp_dir: Path | str) -> dict[str, 
         try:
             import zipfile
             with zipfile.ZipFile(zipped) as zf:
-                if "ci-results/summary.json" in zf.namelist():
-                    summary = json.loads(zf.read("ci-results/summary.json"))
-                    stub.update(summary)
-                    stub["run_id"] = str(run_id)
-                    return stub
+                # GitHub strips the top-level folder of an artifact: a
+                # `path: ci-results` artifact yields `summary.json` at the zip
+                # root, not under `ci-results/`. Match on the basename.
+                for member in zf.namelist():
+                    if member.endswith("summary.json"):
+                        summary = json.loads(zf.read(member))
+                        stub.update(summary)
+                        stub["run_id"] = str(run_id)
+                        return stub
         except (OSError, zipfile.BadZipFile, json.JSONDecodeError):
             continue
     return stub
