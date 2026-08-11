@@ -1,0 +1,12 @@
+{
+  "attempts": 1,
+  "history": [
+    {
+      "attempt": 1,
+      "timestamp": "2026-08-11T20:10:24.773988+00:00",
+      "model": "opencode/deepseek-v4-flash-free",
+      "root_cause": "# Attempt 1 \u2014 E2E gate fix",
+      "local_build_pass": true
+    }
+  ]
+}
