@@ -72,7 +72,11 @@ def is_fix_branch(branch: str) -> bool:
 
 def create_branch_and_commit(repo_dir: Path | str, branch: str, commit_msg: str) -> None:
     assert_safe_branch(branch)
-    _sh(["git", "checkout", "-b", branch], repo_dir)
+    result = _sh(["git", "rev-parse", "--verify", branch], repo_dir, check=False)
+    if result.returncode != 0:
+        _sh(["git", "checkout", "-b", branch], repo_dir)
+    elif _sh(["git", "branch", "--show-current"], repo_dir, check=False).stdout.strip() != branch:
+        _sh(["git", "checkout", branch], repo_dir)
     _sh(["git", "add", "-A"], repo_dir)
     result = _sh(["git", "commit", "-m", commit_msg], repo_dir, check=False)
     if result.returncode != 0 and "nothing to commit" not in result.stderr:

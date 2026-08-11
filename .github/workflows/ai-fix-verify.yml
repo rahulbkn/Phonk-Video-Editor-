@@ -147,10 +147,12 @@ jobs:
 
       - name: Parse results (Firebase path)
         if: steps.firebase-check.outputs.has_firebase == 'true'
+        continue-on-error: true
         run: python3 scripts/parse_firebase_results.py
 
       - name: Parse results (local unit-test gate)
         if: steps.firebase-check.outputs.has_firebase == 'false'
+        continue-on-error: true
         run: python3 scripts/parse_local_results.py
 
       - name: Write job summary
@@ -167,8 +169,13 @@ jobs:
 
       - name: Check status
         id: status
+        if: always()
         run: |
-          STATUS=$(python3 -c "import json;print(json.load(open('ci-results/summary.json'))['status'])")
+          if [ -f ci-results/summary.json ]; then
+            STATUS=$(python3 -c "import json;print(json.load(open('ci-results/summary.json'))['status'])")
+          else
+            STATUS="blocked"
+          fi
           echo "status=$STATUS" >> "$GITHUB_OUTPUT"
 
       - name: Read AI debug state (attempt history)
