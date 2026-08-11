@@ -1,0 +1,77 @@
+{
+  "$comment": "FREE model pool. All models must be free via the configured provider. Provider prefix is 'opencode/' which maps to the OpenCode router's own model catalog. Only models listed here are ever used; the router never falls back to a paid model. Verify availability with: opencode models",
+  "provider": "opencode",
+  "free_only": true,
+  "max_attempts": 3,
+  "default_task": "GENERAL_DEBUGGING",
+  "request_timeout_seconds": 600,
+  "health_check_timeout_seconds": 120,
+  "health_cooldown_seconds": 900,
+  "model": {
+    "opencode/longcat-2.0-free": {
+      "tasks": [
+        "LARGE_REPOSITORY_ANALYSIS",
+        "MULTI_FILE_REFACTOR",
+        "REASONING"
+      ],
+      "priority": 1
+    },
+    "opencode/nemotron-3-ultra-free": {
+      "tasks": [
+        "REASONING",
+        "LOGCAT_ANALYSIS",
+        "CRASH_ANALYSIS",
+        "GENERAL_DEBUGGING"
+      ],
+      "priority": 2
+    },
+    "opencode/nemotron-3.5-lighting-free": {
+      "tasks": [
+        "GENERAL_DEBUGGING",
+        "KOTLIN",
+        "JAVA"
+      ],
+      "priority": 3
+    },
+    "opencode/deepseek-v4-flash-free": {
+      "tasks": [
+        "KOTLIN",
+        "JAVA",
+        "ANDROID_UI",
+        "GRADLE_BUILD",
+        "CI_FAILURE",
+        "TEST_FAILURE"
+      ],
+      "priority": 4
+    },
+    "opencode/mimo-v2.5-free": {
+      "tasks": [
+        "C_CPP",
+        "FFMPEG",
+        "MEDIA_CODEC",
+        "SIMPLE_BUG_FIX"
+      ],
+      "priority": 5
+    },
+    "opencode/big-pickle": {
+      "tasks": [
+        "SIMPLE_BUG_FIX",
+        "TEST_FAILURE"
+      ],
+      "priority": 6
+    },
+    "opencode/ling-3.0-tiny-free": {
+      "tasks": [
+        "SIMPLE_BUG_FIX"
+      ],
+      "priority": 7
+    },
+    "opencode/laguna-s-2.1-free": {
+      "tasks": [
+        "SIMPLE_BUG_FIX",
+        "FIREBASE_TEST"
+      ],
+      "priority": 8
+    }
+  }
+}

@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# AI debug runtime state (job state, health, checked-out repos)
+.ai-debug/
+.ai-debug-data/
+jobs/
+
+# Local test artifacts
+ci-results/
+testlab-*/
