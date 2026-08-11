@@ -247,3 +247,34 @@ class OrchestratorTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RetryCommitTest(unittest.TestCase):
+    """create_branch_and_commit must commit on an already-existing branch
+    (retry flow) without failing on `checkout -b`."""
+
+    def _setup_env(self):
+        os.environ["GITHUB_TOKEN"] = "fake-token"
+
+    def test_commits_on_existing_branch(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._setup_env()
+            from ai_debug import github
+            repo = Path(d) / "repo"
+            repo.mkdir()
+            _git(repo, "init", "-q", "-b", "main")
+            _git(repo, "config", "user.email", "t@t")
+            _git(repo, "config", "user.name", "t")
+            (repo / "f.txt").write_text("v1")
+            _git(repo, "add", ".")
+            _git(repo, "commit", "-m", "init")
+            _git(repo, "checkout", "-b", "feature/ai-fix-99")
+
+            (repo / "f.txt").write_text("v2-fixed")
+            github.create_branch_and_commit(repo, "feature/ai-fix-99", "fix: attempt 1")
+
+            current = _git(repo, "branch", "--show-current").stdout.strip()
+            self.assertEqual(current, "feature/ai-fix-99")
+            self.assertEqual(_git(repo, "log", "--oneline", "-1").stdout.strip().endswith("fix: attempt 1"),
+                             True)
+            self.assertEqual((repo / "f.txt").read_text(), "v2-fixed")
