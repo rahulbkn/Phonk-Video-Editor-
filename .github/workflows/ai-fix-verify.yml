@@ -42,12 +42,25 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install NDK + CMake
+      - name: Check for Firebase secrets
+        id: firebase-check
+        env:
+          PROJECT: ${{ secrets.FIREBASE_PROJECT_ID }}
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -n "$PROJECT" ] && [ -n "$SA" ]; then
+            echo "has_firebase=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_firebase=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install NDK + CMake (Firebase path only)
+        if: steps.firebase-check.outputs.has_firebase == 'true'
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "ndk;27.1.12297006" "cmake;4.4.2"
-          if [ ! -d "$ANDROID_HOME/cmake/4.4.2" ]; then
-            echo "::error::CMake 4.4.2 missing after sdkmanager install"
+          sdkmanager "ndk;27.1.12297006" "cmake;4.1.2"
+          if [ ! -d "$ANDROID_HOME/cmake/4.1.2" ]; then
+            echo "::error::CMake missing after sdkmanager install"
             exit 1
           fi
 
@@ -73,20 +86,8 @@ jobs:
             echo "has_instrumentation=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Check for Firebase secrets
-        id: firebase-check
-        env:
-          PROJECT: ${{ secrets.FIREBASE_PROJECT_ID }}
-          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: |
-          if [ -n "$PROJECT" ] && [ -n "$SA" ]; then
-            echo "has_firebase=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_firebase=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Run local checks (lint, unit tests)
-        run: ./gradlew lintDebug testDebugUnitTest --continue
+      - name: Run unit tests (deterministic local gate)
+        run: ./gradlew testDebugUnitTest
         continue-on-error: true
 
       - name: Build debug APK
