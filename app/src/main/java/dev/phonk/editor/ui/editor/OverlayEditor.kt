@@ -200,15 +200,19 @@ fun BoxScope.OverlayEditorLayer(
                         return@awaitEachGesture
                     }
                     if (hitItem.id != selectedNow?.id) onSelectState.value(hitItem.id)
+                    // Claim the pointer so the ancestor preview clickable cannot
+                    // treat this gesture as a tap (e.g. toggle the controls) and
+                    // steal the drag. Tapping an already-selected overlay should
+                    // never toggle the controls layer.
+                    down.consume()
 
                     // lock: selecting is allowed, transforming is not
                     if (hitItem.locked && hitMode != GestureMode.SELECT) {
                         onSelectState.value(hitItem.id)
-                        do {
-                            val e = awaitPointerEvent()
-                            if (e.changes.none { it.pressed }) break
-                            e.changes.forEach { it.consume() }
-                        } while (true)
+                        // Locked: consume only the down event so the selection registers, but
+                        // do NOT enter an infinite consume loop — that would block interaction
+                        // with items behind this one on the next gesture.
+                        down.consume()
                         return@awaitEachGesture
                     }
 

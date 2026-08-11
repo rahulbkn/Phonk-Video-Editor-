@@ -21,6 +21,20 @@ object SettingsManager {
     private const val KEY_DEBUG_MODE = "debug_mode"
     private const val KEY_DEV_REVEALED = "dev_mode_revealed"
 
+    // Export defaults
+    private const val KEY_DEFAULT_RESOLUTION = "default_resolution"
+    private const val KEY_DEFAULT_FPS = "default_fps"
+    private const val KEY_VIDEO_BITRATE = "video_bitrate"
+    private const val KEY_AUDIO_BITRATE = "audio_bitrate"
+    private const val KEY_HARDWARE_ACCEL = "hardware_accel"
+    private const val KEY_ADD_TO_GALLERY = "add_to_gallery"
+
+    // Editor defaults
+    private const val KEY_DEFAULT_ASPECT = "default_aspect"
+
+    // Project
+    private const val KEY_AUTOSAVE = "autosave"
+
     const val THEME_SYSTEM = "system"
     const val THEME_LIGHT = "light"
     const val THEME_DARK = "dark"
@@ -53,6 +67,33 @@ object SettingsManager {
     var devRevealed by mutableStateOf(false)
         private set
 
+    // Export defaults
+    var defaultResolution by mutableStateOf("1080p")
+        private set
+
+    var defaultFps by mutableStateOf(30)
+        private set
+
+    var videoBitrateMbps by mutableStateOf(12)
+        private set
+
+    var audioBitrateKbps by mutableStateOf(192)
+        private set
+
+    var hardwareAccel by mutableStateOf(true)
+        private set
+
+    var addToGallery by mutableStateOf(true)
+        private set
+
+    // Editor defaults
+    var defaultAspect by mutableStateOf("9:16")
+        private set
+
+    // Project
+    var autosave by mutableStateOf(true)
+        private set
+
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -62,6 +103,14 @@ object SettingsManager {
         languageCode = prefs(context).getString(KEY_LANGUAGE, LANG_SYSTEM) ?: LANG_SYSTEM
         debugMode = prefs(context).getBoolean(KEY_DEBUG_MODE, false)
         devRevealed = prefs(context).getBoolean(KEY_DEV_REVEALED, false)
+        defaultResolution = prefs(context).getString(KEY_DEFAULT_RESOLUTION, "1080p") ?: "1080p"
+        defaultFps = prefs(context).getInt(KEY_DEFAULT_FPS, 30)
+        videoBitrateMbps = prefs(context).getInt(KEY_VIDEO_BITRATE, 12)
+        audioBitrateKbps = prefs(context).getInt(KEY_AUDIO_BITRATE, 192)
+        hardwareAccel = prefs(context).getBoolean(KEY_HARDWARE_ACCEL, true)
+        addToGallery = prefs(context).getBoolean(KEY_ADD_TO_GALLERY, true)
+        defaultAspect = prefs(context).getString(KEY_DEFAULT_ASPECT, "9:16") ?: "9:16"
+        autosave = prefs(context).getBoolean(KEY_AUTOSAVE, true)
     }
 
     fun setThemeMode(context: Context, mode: String) {
@@ -82,6 +131,52 @@ object SettingsManager {
     fun setDevRevealed(context: Context, revealed: Boolean) {
         devRevealed = revealed
         prefs(context).edit().putBoolean(KEY_DEV_REVEALED, revealed).apply()
+    }
+
+    fun setDefaultResolution(context: Context, resolution: String) {
+        defaultResolution = resolution
+        prefs(context).edit().putString(KEY_DEFAULT_RESOLUTION, resolution).apply()
+    }
+
+    fun setDefaultFps(context: Context, fps: Int) {
+        defaultFps = fps
+        prefs(context).edit().putInt(KEY_DEFAULT_FPS, fps).apply()
+    }
+
+    fun setVideoBitrate(context: Context, bitrate: Int) {
+        videoBitrateMbps = bitrate
+        prefs(context).edit().putInt(KEY_VIDEO_BITRATE, bitrate).apply()
+    }
+
+    fun setAudioBitrate(context: Context, bitrate: Int) {
+        audioBitrateKbps = bitrate
+        prefs(context).edit().putInt(KEY_AUDIO_BITRATE, bitrate).apply()
+    }
+
+    fun setHardwareAccel(context: Context, enabled: Boolean) {
+        hardwareAccel = enabled
+        prefs(context).edit().putBoolean(KEY_HARDWARE_ACCEL, enabled).apply()
+    }
+
+    fun setAddToGallery(context: Context, enabled: Boolean) {
+        addToGallery = enabled
+        prefs(context).edit().putBoolean(KEY_ADD_TO_GALLERY, enabled).apply()
+    }
+
+    fun setDefaultAspect(context: Context, aspect: String) {
+        defaultAspect = aspect
+        prefs(context).edit().putString(KEY_DEFAULT_ASPECT, aspect).apply()
+    }
+
+    fun setAutosave(context: Context, enabled: Boolean) {
+        autosave = enabled
+        prefs(context).edit().putBoolean(KEY_AUTOSAVE, enabled).apply()
+    }
+
+    /** Reset all preferences to their default values. */
+    fun resetAll(context: Context) {
+        prefs(context).edit().clear().apply()
+        init(context)
     }
 
     fun storedLanguage(context: Context): String =

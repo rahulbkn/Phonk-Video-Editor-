@@ -62,6 +62,12 @@ class EditorViewModel(
     private val _playheadMs = MutableStateFlow(0L)
     val playheadMs: StateFlow<Long> = _playheadMs.asStateFlow()
 
+    /** Destination ms of the most recent explicit user seek (timeline tap/drag).
+     *  While set, [pumpPosition] keeps the playhead exactly where the user put
+     *  it instead of echoing a stale/derived player position. Cleared once the
+     *  player has actually arrived at the requested source time. */
+    private var pendingSeekDestMs: Long? = null
+
     private val _selectedOverlayId = MutableStateFlow<String?>(null)
     val selectedOverlayId: StateFlow<String?> = _selectedOverlayId.asStateFlow()
 
@@ -101,12 +107,14 @@ class EditorViewModel(
             analysisManager.state.collect { s ->
                 if (s is AnalysisState.Done) {
                     val target = analysisProjectId
-                    if (target != projectTracker.currentIdentity) {
+                    if (target == null || target != projectTracker.currentIdentity) {
                         // Stale result: either no analysis is in flight for the current
                         // project, or the result belongs to a previous project. Never
                         // apply it to the currently loaded project.
                         return@collect
                     }
+                    // Re-check that analysis is still in flight for THIS project
+                    if (analysisProjectId != target) return@collect
                     _analysis.value = s.result
                     updateProject {
                         it.copy(
@@ -177,6 +185,7 @@ class EditorViewModel(
         player.pause()
         _isPlaying.value = false
         _playheadMs.value = 0L
+        pendingSeekDestMs = null
         refreshUndoState()
     }
 
@@ -215,6 +224,8 @@ class EditorViewModel(
         player.setVideo(uri)
         player.pause()
         _playheadMs.value = 0L
+        pendingSeekDestMs = null
+        beginAnalysis()
     }
 
     /** Imports a separate audio track for analysis and playback. */
@@ -811,6 +822,7 @@ class EditorViewModel(
 
     fun setCurrentPosition(ms: Long) {
         _playheadMs.value = ms
+        pendingSeekDestMs = ms
         player.scrubTo(destToSource(ms), 0L, _project.value?.videoDurationMs ?: 0L)
     }
 
@@ -862,7 +874,19 @@ class EditorViewModel(
      *  Exposes destination timeline time so UI coordinates always match clips. */
     fun pumpPosition() {
         val pos = player.pollPosition()
-        _playheadMs.value = sourceToDest(pos)
+        val pending = pendingSeekDestMs
+        if (pending != null) {
+            // Protect the user's manual seek: media3 applies seekTo asynchronously,
+            // so a poll between the tap and the applied seek would read the OLD
+            // position and stomp the playhead back to zero / anywhere else.
+            val target = destToSource(pending)
+            if (pos >= target - 150L && pos <= target + 150L) {
+                pendingSeekDestMs = null
+            }
+            _playheadMs.value = pending
+        } else {
+            _playheadMs.value = sourceToDest(pos)
+        }
     }
 
     override fun onCleared() {

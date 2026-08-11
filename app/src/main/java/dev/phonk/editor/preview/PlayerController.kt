@@ -74,16 +74,25 @@ class PlayerController(context: Context) {
         player.setPlaybackParameters(androidx.media3.common.PlaybackParameters(1f, 1f))
     }
 
-    /** Enter frame-exact scrubbing. Keep volume on to hear edits. */
+    /** Enter frame-exact scrubbing. Keep volume on to hear edits.
+     *  The window clamp is defensive: when the caller has no real duration yet
+     *  (videoDurationMs == 0 from a failed probe, or the player is still
+     *  preparing), clamping to an empty [0, 0] range would collapse every seek
+     *  to 0. Fall back to the player's own duration / an open range so media3
+     *  applies the seek and clamps to the real window itself. */
     fun scrubTo(ms: Long, windowStart: Long, windowEnd: Long) {
-        player.seekTo(ms.coerceIn(windowStart, windowEnd))
+        val d = player.duration
+        val end = when {
+            windowEnd > 0L -> windowEnd
+            d > 0L -> d
+            else -> Long.MAX_VALUE
+        }
+        player.seekTo(ms.coerceIn(windowStart.coerceAtLeast(0L), end))
     }
 
     fun play() {
         player.playWhenReady = true
     }
-
-    suspend fun stop() { /* no-op suspend to match call site */ }
 
     fun pause() {
         player.playWhenReady = false
@@ -93,6 +102,12 @@ class PlayerController(context: Context) {
         player.release()
     }
 
-    /** Polled once per UI frame from [pumpPosition]. */
-    fun pollPosition(): Long = if (player.duration > 0L) player.currentPosition else 0L
+    /** Polled once per UI frame from [pumpPosition]. Reports the real media
+     *  position whenever the player has one. Gating on `duration > 0` made the
+     *  playhead collapse to 0 while the media was still preparing (duration is
+     *  C.TIME_UNSET until then), which fought every seek the user made. */
+    fun pollPosition(): Long {
+        val pos = player.currentPosition
+        return if (pos in 0L..Long.MAX_VALUE) pos else 0L
+    }
 }

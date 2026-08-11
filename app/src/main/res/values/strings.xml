@@ -60,6 +60,153 @@
     <string name="debug_dev_entries_hint">Hides the Developer card from Settings so normal users never see it.</string>
     <string name="debug_revealed">Developer mode enabled</string>
 
+    <!-- ============================= Settings sections ============================= -->
+    <string name="settings_section_appearance">APPEARANCE</string>
+    <string name="settings_section_language">LANGUAGE</string>
+    <string name="settings_section_editor">EDITOR</string>
+    <string name="settings_section_preview">PREVIEW</string>
+    <string name="settings_section_audio">AUDIO &amp; BEAT</string>
+    <string name="settings_section_export">EXPORT</string>
+    <string name="settings_section_performance">PERFORMANCE</string>
+    <string name="settings_section_storage">STORAGE</string>
+    <string name="settings_section_project">PROJECT</string>
+    <string name="settings_section_accessibility">ACCESSIBILITY</string>
+    <string name="settings_section_diagnostics">DIAGNOSTICS</string>
+    <string name="settings_section_about">ABOUT</string>
+    <string name="settings_section_danger">DANGER ZONE</string>
+
+    <!-- Appearance -->
+    <string name="settings_reduce_animations">Reduce animations</string>
+    <string name="settings_reduce_animations_hint">Reduce unnecessary UI animations</string>
+
+    <!-- Editor -->
+    <string name="settings_default_aspect">Default aspect ratio</string>
+    <string name="settings_default_aspect_hint">Default for new projects</string>
+    <string name="settings_default_fps">Default project FPS</string>
+    <string name="settings_default_fps_hint">Default for new projects</string>
+    <string name="settings_snap_to_beats">Snap to beats</string>
+    <string name="settings_snap_to_beats_hint">Timeline movement snaps to detected beats</string>
+    <string name="settings_haptic_feedback">Haptic feedback</string>
+    <string name="settings_haptic_feedback_hint">Vibrate on editor interactions</string>
+
+    <!-- Preview -->
+    <string name="settings_preview_quality">Preview quality</string>
+    <string name="settings_preview_quality_auto">Auto</string>
+    <string name="settings_preview_quality_low">Low</string>
+    <string name="settings_preview_quality_medium">Medium</string>
+    <string name="settings_preview_quality_high">High</string>
+    <string name="settings_realtime_effects">Real-time effects</string>
+    <string name="settings_realtime_effects_hint">Show effects during preview</string>
+    <string name="settings_show_safe_area">Show safe area</string>
+    <string name="settings_show_safe_area_hint">Display editing guides for social video</string>
+    <string name="settings_show_grid">Show grid</string>
+    <string name="settings_show_grid_hint">Display editing grid (never exported)</string>
+    <string name="settings_show_markers">Show timeline markers</string>
+    <string name="settings_show_markers_hint">Beat/drop/keyframe marker visibility</string>
+
+    <!-- Audio & Beat -->
+    <string name="settings_default_volume">Default audio volume</string>
+    <string name="settings_beat_sensitivity">Beat sensitivity</string>
+    <string name="settings_beat_sensitivity_low">Low</string>
+    <string name="settings_beat_sensitivity_medium">Medium</string>
+    <string name="settings_beat_sensitivity_high">High</string>
+    <string name="settings_auto_analyze">Auto analyze imported audio</string>
+    <string name="settings_auto_analyze_hint">Analyze new audio automatically</string>
+    <string name="settings_beat_markers">Beat marker visibility</string>
+    <string name="settings_beat_sync_preview">Beat sync preview</string>
+    <string name="settings_beat_sync_preview_hint">Show beat-sync visuals during preview</string>
+
+    <!-- Export -->
+    <string name="settings_default_resolution">Default resolution</string>
+    <string name="settings_default_resolution_hint">Default for new projects</string>
+    <string name="settings_default_format">Default format</string>
+    <string name="settings_video_quality">Video quality</string>
+    <string name="settings_video_quality_low">Low</string>
+    <string name="settings_video_quality_medium">Medium</string>
+    <string name="settings_video_quality_high">High</string>
+    <string name="settings_video_quality_custom">Custom</string>
+    <string name="settings_audio_quality">Audio quality</string>
+    <string name="settings_audio_quality_low">Low (128 kbps)</string>
+    <string name="settings_audio_quality_medium">Medium (192 kbps)</string>
+    <string name="settings_audio_quality_high">High (256 kbps)</string>
+    <string name="settings_hardware_accel">Hardware acceleration</string>
+    <string name="settings_hardware_accel_hint">Use GPU for video encoding</string>
+    <string name="settings_add_to_gallery">Add to gallery</string>
+    <string name="settings_add_to_gallery_hint">Save exports to MediaStore</string>
+    <string name="settings_export_complete_message">Show export completion message</string>
+    <string name="settings_export_location">Export location</string>
+    <string name="settings_export_location_default">/Movies/Phonk</string>
+
+    <!-- Performance -->
+    <string name="settings_low_memory_mode">Low-memory mode</string>
+    <string name="settings_low_memory_mode_hint">Reduce memory usage on low-end devices</string>
+    <string name="settings_thumbnail_quality">Thumbnail quality</string>
+    <string name="settings_background_analysis">Background analysis</string>
+    <string name="settings_background_analysis_hint">Analyze audio without blocking UI</string>
+    <string name="settings_keep_screen_awake">Keep screen awake while editing</string>
+    <string name="settings_keep_screen_awake_hint">Prevent screen from sleeping</string>
+
+    <!-- Storage -->
+    <string name="settings_storage_projects">Projects</string>
+    <string name="settings_storage_cache">Cache</string>
+    <string name="settings_storage_exports">Exports</string>
+    <string name="settings_clear_cache">Clear cache</string>
+    <string name="settings_clear_cache_hint">Remove temporary preview/thumbnail files</string>
+    <string name="settings_manage_projects">Manage projects</string>
+    <string name="settings_open_export_folder">Open export folder</string>
+
+    <!-- Clear cache dialog -->
+    <string name="dialog_clear_cache_title">Clear cache?</string>
+    <string name="dialog_clear_cache_message">This removes temporary preview/thumbnails/cache files. Your projects and exported videos will not be deleted.</string>
+    <string name="cache_cleared">Cache cleared: %1$s</string>
+
+    <!-- Project -->
+    <string name="settings_autosave">Autosave</string>
+    <string name="settings_autosave_hint">Automatically save project changes</string>
+    <string name="settings_autosave_interval">Autosave interval</string>
+    <string name="settings_save_on_background">Save project on background</string>
+    <string name="settings_save_on_background_hint">Save when app goes to background</string>
+
+    <!-- Accessibility -->
+    <string name="settings_larger_controls">Larger controls</string>
+    <string name="settings_larger_controls_hint">Increase touch target sizes</string>
+    <string name="settings_reduce_motion">Reduce motion</string>
+    <string name="settings_reduce_motion_hint">Reduce UI motion/animations</string>
+    <string name="settings_high_contrast">High contrast</string>
+    <string name="settings_high_contrast_hint">Increase text/UI contrast</string>
+
+    <!-- Diagnostics -->
+    <string name="settings_app_version">App version</string>
+    <string name="settings_build_number">Build number</string>
+    <string name="settings_android_version">Android version</string>
+    <string name="settings_device_model">Device model</string>
+    <string name="settings_cpu_arch">CPU architecture</string>
+    <string name="settings_available_memory">Available memory</string>
+    <string name="settings_ffmpeg_status">FFmpeg status</string>
+    <string name="settings_ffmpeg_available">Available</string>
+    <string name="settings_ffmpeg_missing">Missing</string>
+    <string name="settings_storage_status">Storage status</string>
+    <string name="settings_copy_diagnostics">Copy diagnostic information</string>
+    <string name="settings_export_state">Export current app state</string>
+    <string name="diagnostics_copied">Diagnostic information copied</string>
+
+    <!-- About -->
+    <string name="settings_about_description">Edit. Sync. Drop.</string>
+    <string name="settings_licenses">Open source licenses</string>
+    <string name="settings_privacy">Privacy policy</string>
+
+    <!-- Reset settings -->
+    <string name="settings_reset_settings">Reset settings</string>
+    <string name="settings_reset_settings_hint">Restore all preferences to defaults</string>
+    <string name="dialog_reset_settings_title">Reset settings?</string>
+    <string name="dialog_reset_settings_message">This will restore application preferences to their defaults. Your projects and media will remain untouched.</string>
+    <string name="settings_reset_done">Settings reset to defaults</string>
+
+    <!-- Common -->
+    <string name="on">On</string>
+    <string name="off">Off</string>
+    <string name="not_available">Not available</string>
+
     <!-- ============================= Crash reporting ============================= -->
 
     <!-- Headings / status -->
@@ -160,11 +307,15 @@
     <string name="tool_beat">Beat</string>
     <string name="tool_transition">Transition</string>
     <string name="tool_overlay">Overlay</string>
+    <string name="tool_ratio">Ratio</string>
     <string name="tool_adjust">Adjust</string>
     <string name="tool_split">Split</string>
     <string name="tool_trim">Trim</string>
     <string name="tool_delete">Delete</string>
     <string name="tool_duplicate">Duplicate</string>
+    <string name="tool_sticker">Sticker</string>
+    <string name="tool_more">More</string>
+    <string name="tool_edit">Edit</string>
 
     <string name="overlay_duplicate">Duplicate overlay</string>
     <string name="overlay_lock">Lock overlay</string>
@@ -305,6 +456,7 @@
     <string name="beat_cut_patterns">Cut Patterns</string>
     <string name="beat_add_drop">Add Drop Here</string>
     <string name="beat_remove_drop">Remove Drop</string>
+    <string name="beat_detect_first">Detect beats first to enable auto-cut and patterns</string>
 
     <!-- Text -->
     <string name="text_add">Add Text</string>
@@ -333,6 +485,37 @@
     <string name="empty_no_effects">No effects added</string>
     <string name="empty_no_text">No text layers</string>
     <string name="empty_no_projects">No projects yet</string>
+    <string name="empty_no_projects_subtitle">Open a video to get started</string>
+    <string name="home_subtitle">Edit. Sync. Drop.</string>
+    <string name="open_video_subtitle">Start editing your next drop</string>
+    <string name="view_all">View all</string>
+    <string name="quick_actions">Quick actions</string>
+    <string name="action_new_project">New project</string>
+    <string name="action_open_project">Open project</string>
+    <string name="action_export_video">Export video</string>
+    <string name="action_beat_analyzer">Beat analyzer</string>
+    <string name="action_help">Help</string>
+    <string name="analyzing">Analyzing…</string>
+    <string name="bpm_value">%1$.1f BPM</string>
+    <string name="beats_drops_value">%1$d beats · %2$d drops</string>
+    <string name="duration_value">%1$s</string>
+    <string name="resolution_value">%1$dx%2$d</string>
+    <string name="updated_just_now">Updated just now</string>
+    <string name="updated_minutes_ago">Updated %1$d min ago</string>
+    <string name="updated_hours_ago">Updated %1$d hr ago</string>
+    <string name="updated_days_ago">Updated %1$d days ago</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_projects">Projects</string>
+    <string name="nav_beats">Beats</string>
+    <string name="nav_profile">Profile</string>
+    <string name="nav_add">Add</string>
+    <string name="project_menu">Project options</string>
+    <string name="delete_project">Delete</string>
+    <string name="duplicate_project">Duplicate</string>
+    <string name="rename_project">Rename</string>
+    <string name="share_project">Share</string>
+    <string name="loading">Loading…</string>
+    <string name="error_loading_projects">Could not load projects</string>
     <string name="err_load_video">Unable to load video</string>
     <string name="err_unsupported">Unsupported video format</string>
     <string name="err_audio_import">Audio could not be imported</string>

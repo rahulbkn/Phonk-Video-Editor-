@@ -416,22 +416,30 @@ object FFmpegCommandBuilder {
                     sb.append(",eq=saturation=0.3:enable='between(t,").append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
                     sb.append(",hue=H=0.02*sin(2*PI*t*24):enable='between(t,").append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
                 }
-                // ZOOM/SHAKE/BLUR/FADE are not representable in this build's
-                // filter set; skipped so export always completes.
+                EffectKind.ZOOM -> {
+                    val zoom = (amt * 0.3f).coerceAtLeast(0.05f)
+                    sb.append(",zoompan=z='1+").append(fmt(zoom.toDouble())).append("*sin(on*PI/3.5)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:fps=30:enable='between(t,")
+                        .append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+                }
+                EffectKind.SHAKE -> {
+                    val amp = (amt * 20f).coerceAtLeast(2f)
+                    sb.append(",crop=iw:ih:x=").append(fmt(amp.toDouble())).append("*sin(on*2):y=").append(fmt(amp.toDouble())).append("*cos(on*2.5):enable='between(t,")
+                        .append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+                }
                 else -> Unit
             }
         }
     }
 
-    /** Flash window at clip boundaries that carry a transition. */
+    /** Fade-in window at clip boundaries that carry a transition. */
     private fun appendTransitions(sb: StringBuilder, segments: List<ClipSegment>, durationMs: Long) {
         if (durationMs <= 0L) return
         for (seg in segments) {
             if (seg.transition.isNullOrBlank() || seg.destStartMs <= 0L) continue
             val t0 = seg.destStartMs / 1000.0
             val t1 = (seg.destStartMs + durationMs) / 1000.0
-            sb.append(",lutyuv=y=250:u=128:v=128:enable='between(t,")
-                .append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+            sb.append(",fade=t=in:st=").append(fmt(t0)).append(":d=").append(fmt(durationMs / 1000.0))
+                .append(":enable='between(t,").append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
         }
     }
 
@@ -496,10 +504,16 @@ object FFmpegCommandBuilder {
                 sb.append(",lutyuv=y=250:u=128:v=128:enable='between(t,")
                     .append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
             }
-            // ZOOM/SHAKE rely on timeline-safe techniques not available in the
-            // bundled build; keep them as no-ops so export can complete.
-            EffectKind.ZOOM -> Unit
-            EffectKind.SHAKE -> Unit
+            EffectKind.ZOOM -> {
+                val zoom = (e.amount * 0.3f).coerceAtLeast(0.05f)
+                sb.append(",zoompan=z='1+").append(fmt(zoom.toDouble())).append("*sin(on*PI/3.5)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:fps=30:enable='between(t,")
+                    .append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+            }
+            EffectKind.SHAKE -> {
+                val amp = (e.amount * 20f).coerceAtLeast(2f)
+                sb.append(",crop=iw:ih:x=").append(fmt(amp.toDouble())).append("*sin(on*2):y=").append(fmt(amp.toDouble())).append("*cos(on*2.5):enable='between(t,")
+                    .append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+            }
             EffectKind.BRIGHTNESS -> {
                 val amt = (e.amount * 0.5).coerceAtLeast(0.05)
                 sb.append(",eq=brightness=").append(fmt(amt)).append(":enable='between(t,").append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
@@ -510,7 +524,7 @@ object FFmpegCommandBuilder {
             }
             EffectKind.GLITCH -> {
                 sb.append(",eq=saturation=0.2:enable='between(t,").append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
-                sb.append(",hue=H=0.02*sin(2*PI*t*30):enable='between(t,").append(fmt(t0)).append(",").append(fmt(t0 + e.durationMs / 1000.0)).append(")'")
+                sb.append(",hue=H=0.02*sin(2*PI*t*30):enable='between(t,").append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
             }
             else -> Unit
         }

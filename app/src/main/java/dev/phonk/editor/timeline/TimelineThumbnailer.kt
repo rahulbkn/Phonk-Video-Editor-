@@ -38,6 +38,7 @@ object TimelineThumbnailer {
         try {
             retriever.setDataSource(context, Uri.parse(uri))
             for (sourceMs in missing) {
+                if (Thread.currentThread().isInterrupted) return
                 val frame = try {
                     retriever.getFrameAtTime(
                         sourceMs.coerceAtLeast(0L) * 1000L,

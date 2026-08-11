@@ -72,7 +72,7 @@ class ProcessFFmpegEngine(private val binaryPath: String) : FFmpegEngine {
         } catch (e: IOException) {
             // native process may have been killed by cancellation
         } finally {
-            if (cancel.get() || !proc.isAlive) proc.destroyForcibly()
+            proc.destroyForcibly()
         }
         android.util.Log.i("FFmpeg", "exit=" + exit)
     }

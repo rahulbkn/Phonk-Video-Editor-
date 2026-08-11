@@ -1,29 +1,55 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Centralized color palette — DARK (deep blue/purple) design system.
+    Centralized color palette — DARK (NOXFRAME) design system.
+    Professional dark cinematic editor: near-black surfaces, pink/magenta accent.
     Automatically selected when the device is in dark mode / night mode.
-    Comfortable for long stack-trace reading: no pure black, high text contrast.
+    Source: noxframe_dark_editor_ui.html design specification.
 -->
 <resources>
-    <!-- Core palette -->
-    <color name="background">#0D1025</color>
-    <color name="surface">#161B33</color>
-    <color name="surface_variant">#1E2347</color>
-    <color name="primary">#8B5CF6</color>
-    <color name="secondary">#6D28D9</color>
-    <color name="accent">#E879F9</color>
+    <!-- Core palette — PURPLE accent (not pink) -->
+    <color name="background">#09090E</color>
+    <color name="surface">#111118</color>
+    <color name="surface_variant">#17171F</color>
+    <color name="primary">#A855F7</color>
+    <color name="secondary">#20202A</color>
+    <color name="accent">#C084FC</color>
 
-    <color name="on_primary">#FFFFFF</color>
-    <color name="on_accent">#1A0B2E</color>
-    <color name="text_primary">#F1F1F1</color>
-    <color name="text_secondary">#B0B3D1</color>
+    <color name="on_primary">#F7F7FB</color>
+    <color name="on_accent">#F7F7FB</color>
+    <color name="text_primary">#F7F7FB</color>
+    <color name="text_secondary">#8F909D</color>
 
     <!-- Semantic -->
-    <color name="divider">#2E3A5E</color>
-    <color name="error">#FF8A80</color>
-    <color name="on_error">#1A0B2E</color>
-    <color name="code_background">#0A0D1F</color>
-    <color name="ripple">#338B5CF6</color>
+    <color name="divider">#292934</color>
+    <color name="error">#FF6B6B</color>
+    <color name="on_error">#FFFFFF</color>
+    <color name="code_background">#0A0A0F</color>
+    <color name="ripple">#33A855F7</color>
+
+    <!-- Extended palette -->
+    <color name="lavender">#1A1A2E</color>
+    <color name="success">#39D7B1</color>
+    <color name="success_container">#123B36</color>
+    <color name="warning">#FB923C</color>
+    <color name="warning_container">#431407</color>
+    <color name="on_success">#052E16</color>
+    <color name="on_warning">#1A0B0A</color>
+
+    <!-- Editor specific -->
+    <color name="surface_elevated">#20202A</color>
+    <color name="surface_timeline">#0D0D13</color>
+    <color name="surface_track">#0C0C12</color>
+    <color name="surface_track_label">#101017</color>
+    <color name="surface_panel">#121219</color>
+    <color name="border_clip">#363642</color>
+    <color name="border_selected">#7C3AED</color>
+    <color name="surface_selected">#2D1B4E</color>
+    <color name="text_selected">#C084FC</color>
+    <color name="keyframe">#A855F7</color>
+    <color name="audio_fx">#39D7B1</color>
+    <color name="status_muted">#858692</color>
+    <color name="preview_bg">#020205</color>
+    <color name="seek_inactive">#373740</color>
 
     <!-- Legacy aliases (kept for compatibility) -->
     <color name="crash_background">@color/background</color>

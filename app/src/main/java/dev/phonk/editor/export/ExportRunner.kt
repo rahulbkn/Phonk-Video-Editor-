@@ -120,7 +120,7 @@ class ExportRunner(
                             if (b.confidence > 0f) {
                                 add(
                                     EffectSpec(
-                                        b.timestampMs.toLong(),
+                                        sourceToDestForExport(clips, b.timestampMs.toLong()),
                                         90,
                                         EffectKind.BRIGHTNESS,
                                         project.beatSyncStrength * 0.4f,
@@ -132,7 +132,7 @@ class ExportRunner(
                             if (d.strength > 0f) {
                                 add(
                                     EffectSpec(
-                                        d.timestampMs.toLong(),
+                                        sourceToDestForExport(clips, d.timestampMs.toLong()),
                                         180,
                                         EffectKind.BRIGHTNESS,
                                         project.beatSyncStrength * 0.55f,
@@ -381,6 +381,17 @@ class ExportRunner(
         values.put(MediaStore.Video.Media.IS_PENDING, 0)
         resolver.update(uri, values, null, null)
         return uri
+    }
+
+    private fun sourceToDestForExport(clips: List<ClipSegment>, srcMs: Long): Long {
+        if (clips.isEmpty()) return srcMs
+        val clip = clips.firstOrNull { srcMs in it.sourceStartMs until it.sourceEndMs }
+            ?: return srcMs
+        val srcDur = (clip.sourceEndMs - clip.sourceStartMs).coerceAtLeast(1L)
+        val destDur = (clip.destEndMs - clip.destStartMs).coerceAtLeast(0L)
+        val ratio = destDur.toDouble() / srcDur
+        return (clip.destStartMs + ((srcMs - clip.sourceStartMs) * ratio).toLong())
+            .coerceIn(clip.destStartMs, clip.destEndMs)
     }
 
     private fun ffmpegEngine(): FFmpegEngine {

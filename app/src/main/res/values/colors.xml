@@ -5,13 +5,13 @@
     resources so values-night/colors.xml can override them automatically.
 -->
 <resources>
-    <!-- Core palette -->
-    <color name="background">#FFF0F6</color>
+    <!-- Core palette — PURPLE accent -->
+    <color name="background">#FFF7FB</color>
     <color name="surface">#FFFFFF</color>
-    <color name="surface_variant">#FFE6F0</color>
-    <color name="primary">#FF7EB6</color>
-    <color name="secondary">#FFC1E3</color>
-    <color name="accent">#FF4D94</color>
+    <color name="surface_variant">#F3E8FF</color>
+    <color name="primary">#A855F7</color>
+    <color name="secondary">#C084FC</color>
+    <color name="accent">#7C3AED</color>
 
     <color name="on_primary">#FFFFFF</color>
     <color name="on_accent">#FFFFFF</color>
@@ -24,6 +24,15 @@
     <color name="on_error">#FFFFFF</color>
     <color name="code_background">#FFEAF3</color>
     <color name="ripple">#33FF4D94</color>
+
+    <!-- Extended palette -->
+    <color name="lavender">#F0E8FF</color>
+    <color name="success">#22C55E</color>
+    <color name="success_container">#DCFCE7</color>
+    <color name="warning">#F97316</color>
+    <color name="warning_container">#FFEDD5</color>
+    <color name="on_success">#FFFFFF</color>
+    <color name="on_warning">#FFFFFF</color>
 
     <!-- Legacy aliases (kept for compatibility) -->
     <color name="crash_background">@color/background</color>

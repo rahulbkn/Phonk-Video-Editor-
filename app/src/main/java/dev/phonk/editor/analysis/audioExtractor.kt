@@ -126,6 +126,7 @@ object AudioExtractor {
                     outIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> {
                         stallIterations++
                         if (stallIterations > 300_000) break
+                        Thread.sleep(10)
                     }
                 }
             }

@@ -143,4 +143,5 @@
     <string name="overlay_front">सबसे ऊपर लाएँ</string>
     <string name="overlay_back">सबसे नीचे भेजें</string>
     <string name="overlay_edit">टेक्स्ट संपादित करें</string>
+    <string name="beat_detect_first">ऑटो-कट और पैटर्न सक्षम करने के लिए पहले बीट का पता लगाएं</string>
 </resources>

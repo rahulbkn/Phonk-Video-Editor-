@@ -71,3 +71,79 @@ dependencies {
     testImplementation("org.json:json:20240303")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
 }
+
+tasks.register<Copy>("copyApkToSdcard") {
+    val apkDir = layout.buildDirectory.dir("outputs/apk/debug").get().asFile
+    from(apkDir) {
+        include("*.apk", "output-metadata.json")
+    }
+    into("/sdcard")
+    doNotTrackState("Cannot scan /sdcard for incremental state")
+    doFirst {
+        mkdir("/sdcard")
+    }
+}
+
+// --- CURRENT STATE SNAPSHOT TOOLING (developer/debugging aid only) ---
+//
+// * The build-attempt marker is written when the task graph is ready — BEFORE
+//   any packaging task runs. snapshot.py compares the produced APK mtime to it,
+//   so a failed/incomplete assemble* is detected without ever failing the build.
+// * collectTestResults runs after testDebugUnitTest/testReleaseUnitTest and
+//   aggregates JUnit XML into build/outputs/state/test-results.json.
+// * generateStateSnapshot runs after every assembleDebug/assembleRelease and
+//   regenerates APP_CURRENT_STATE.txt on shared storage + its history.
+
+// The build result is captured from Gradle's own task graph when the snapshot
+// task runs (it is finalizedBy assemble*). If any task failed, snapshot.py is
+// told to write the BUILD_FAILED report and leave the last known-good state
+// untouched; otherwise it regenerates the full CURRENT STATE report. This is
+// accurate even for incremental/up-to-date builds, unlike APK-mtime heuristics.
+fun snapshotApkRoot(): File = File(projectDir, "build/outputs/apk")
+fun snapshotStateDir(): File = File(projectDir, "build/outputs/state")
+
+tasks.register<Exec>("collectTestResultsDebug") {
+    description = "Aggregate JUnit XML (debug) into state/test-results.json"
+    workingDir(rootProject.projectDir)
+    commandLine("python3", "tools/state/test-summary.py",
+        File(projectDir, "build/test-results/testDebugUnitTest").path,
+        File(snapshotStateDir(), "test-results.json").path)
+    doNotTrackState("Snapshot tooling writes derived state files")
+    isIgnoreExitValue = true
+}
+
+tasks.register<Exec>("collectTestResultsRelease") {
+    description = "Aggregate JUnit XML (release) into state/test-results.json"
+    workingDir(rootProject.projectDir)
+    commandLine("python3", "tools/state/test-summary.py",
+        File(projectDir, "build/test-results/testReleaseUnitTest").path,
+        File(snapshotStateDir(), "test-results.json").path)
+    doNotTrackState("Snapshot tooling writes derived state files")
+    isIgnoreExitValue = true
+}
+
+tasks.register<Exec>("generateStateSnapshot") {
+    description = "Regenerate the CURRENT STATE snapshot after every APK build"
+    workingDir(rootProject.projectDir)
+    commandLine("bash", "tools/state/snapshot.sh",
+        rootProject.projectDir.path,
+        snapshotApkRoot().path,
+        "--keep", "20")
+    doNotTrackState("Snapshot tooling writes derived state files")
+    isIgnoreExitValue = true
+    doFirst {
+        val failed = gradle.taskGraph.allTasks.any { it.state.failure != null }
+        environment["STATE_SNAPSHOT_BUILD_OK"] = if (failed) "false" else "true"
+    }
+}
+
+tasks.whenTaskAdded {
+    when (name) {
+        "assembleDebug", "assembleRelease" -> {
+            finalizedBy("copyApkToSdcard")
+            finalizedBy("generateStateSnapshot")
+        }
+        "testDebugUnitTest" -> finalizedBy("collectTestResultsDebug")
+        "testReleaseUnitTest" -> finalizedBy("collectTestResultsRelease")
+    }
+}

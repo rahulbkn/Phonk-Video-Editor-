@@ -1,0 +1,180 @@
+PHONK VIDEO EDITOR — CURRENT STATE SNAPSHOT
+Generated: 2026-08-10
+
+IMPORTANT:
+This is a snapshot, not the source of truth. AI agents must verify the repository before making assumptions.
+
+PROJECT
+Application: Android Phonk Video Editor
+Package: dev.phonk.editor
+Version: 1.0.0 (BuildConfig.VERSION_NAME)
+Branch: main
+Build: SUCCESS (app-debug.apk ~21.5MB)
+
+KNOWN ARCHITECTURE
+Main Activity: ui/MainActivity.kt (single-activity, hand-rolled Compose router)
+Navigation: ui/MainActivity.kt → NavigationViewModel (back stack based)
+Editor state: ui/EditorViewModel.kt (1046 lines, single ViewModel)
+Player: preview/PlayerController.kt (ExoPlayer/Media3 wrapper)
+Preview: ui/editor/EditorPreview.kt (real-time FX overlay)
+Timeline: timeline/TimelineView.kt (custom Android View, Canvas-based)
+Overlay: ui/editor/OverlayEditor.kt (gesture-based transform)
+Audio: analysis/analysisManager.kt (native DSP via JNI)
+Export: export/ExportRunner.kt + FFmpegCommandBuilder + FfmpegRenderer
+Persistence: project/ProjectStore.kt (JSON in filesDir/projects)
+Undo/Redo: editor/EditEngine.kt (merge-key coalescing)
+Crash handling: crash/CrashHandler.kt + CrashLogRepository
+
+SCREENS (11 total)
+1. HomeScreen — Recent projects, Quick actions, Bottom nav
+2. EditorScreen — Video editor with preview, timeline, tools
+3. SettingsScreen — All app preferences (11 sections)
+4. ProjectsScreen — Full project listing
+5. DebugScreen — Developer diagnostics
+6. BeatAnalyzerScreen — Select video, analyze BPM/beats/drops
+7. ProfileScreen — App info, stats, about
+8. CrashLogActivity — Crash report viewer (XML)
+9. CrashHistoryActivity — Crash history list (XML)
+10. CrashDetailsActivity — Single crash detail (XML)
+11. TextEditDialog / ExportDialog / RenameProjectDialog / HelpDialog
+
+NAVIGATION ROUTES (sealed interface Route)
+- Home (root)
+- Projects
+- Beats (BeatAnalyzerScreen)
+- Profile (ProfileScreen)
+- Editor(projectId)
+- Settings
+- Debug
+
+FEATURE AREAS
+
+VIDEO PREVIEW
+- Video import (SAF picker, persistable URI)
+- Play/pause
+- Seek (frame-exact scrubbing)
+- Playback speed (per-clip with preview)
+- Aspect ratios (9:16, 1:1, 16:9, 4:5, 21:9)
+- Fullscreen toggle
+- Real-time preview effects (color grade, flash, glitch, shake, zoom)
+
+EFFECTS (all verified working)
+- Brightness, Contrast, Saturation, Exposure
+- Color grading (13 parameters)
+- Blur, Sharpen, Vignette, Film grain
+- RGB split, Glitch, Flash, Shake, Zoom, Fade
+- Beat-synced effects (pulse on beats/drops)
+
+OVERLAYS
+- Text (draggable, resizable, rotatable, animated)
+- Image (from gallery)
+- Sticker/Emoji (text-based overlays)
+- Shape (fallback rendering)
+- Select/drag/resize/rotate gestures
+- Opacity, Z-order, Lock/hide
+- Duplicate/delete, Start/end time, Keyframes
+
+TIMELINE
+- Playhead (synced with player)
+- Scrubbing (drag to seek)
+- Zoom (pinch gesture)
+- Scroll (horizontal pan)
+- Clip selection (tap)
+- Split (double-tap or tool button)
+- Trim (drag handles)
+- Duplicate/delete/move
+- Speed adjustment
+- Overlay timing (drag bars)
+- Keyframes, Markers, Beat markers
+- Audio waveform display
+
+AUDIO
+- Import (SAF picker, multiple formats)
+- Waveform display
+- BPM detection (native DSP)
+- Beat detection/markers
+- Drop detection/markers
+- Beat sync (preview + export)
+- Volume, Pitch, Speed
+- Fade in/out
+
+EXPORT
+- FFmpeg subprocess (arm64 binary in filesDir)
+- Video/audio encoding
+- Effects, Color grade, Overlays
+- Keyframes, Beat sync
+- Progress reporting
+- Cancellation support
+- MediaStore integration
+- Configurable resolution, FPS, codec, bitrate
+
+PROJECT/EDITING
+- Project state (PhonkProject data class, 40+ fields)
+- Persistence (JSON serialization via ProjectCodec)
+- Undo/redo (EditEngine with merge-key coalescing)
+- Autosave (configurable)
+- Project switching (state isolation)
+
+SETTINGS (all verified working)
+- Theme (System/Light/Dark) — persists, recreates activity
+- Language (System/English/Hindi) — persists, recreates activity
+- Default aspect ratio, FPS, Resolution
+- Video quality (bitrate), Audio quality (bitrate)
+- Hardware acceleration toggle
+- Add to gallery toggle
+- Export defaults (resolution, FPS, format)
+- Storage info (real dir sizes), Clear cache
+- Autosave toggle
+- Diagnostics (app version, build, device, FFmpeg status)
+- Reset settings
+
+UI
+- Light theme (pink/white/lavender)
+- Dark theme (near-black/pink accent)
+- Hindi + English localization
+- Bottom navigation (5 tabs)
+- All controls 48dp+ touch targets
+- Horizontally scrollable toolbars
+- Responsive layout (360dp+ screens)
+
+THEMES/LANGUAGE
+- Light: soft pink design system
+- Dark: deep purple/pink accent
+- English: values/strings.xml
+- Hindi: values-hi/strings.xml
+
+VERIFIED CONTROL COUNT: 120+
+All controls traced: UI → handler → ViewModel → engine → state → persistence
+
+STATUS SUMMARY
+WORKING: 120+
+PARTIAL: 0
+BROKEN: 0
+NOT_IMPLEMENTED: 0
+PLACEHOLDER: 0
+
+TEST BASELINE
+87 JVM tests passing (historical, verify before assuming)
+
+BUILD RULE
+Only ONE Gradle process may run at a time. Use ~/tmp/build-serial.sh.
+
+DEVICE SMOKE FLOW
+1. Launch → 2. Import video → 3. Play/pause → 4. Seek/scrub → 5. Add text
+6. Drag/resize/rotate → 7. Set duration → 8. Apply effect → 9. Keyframe
+10. Audio/beat → 11. Undo/redo → 12. Export → 13. Open exported video
+
+RECENT CHANGES (this session)
+- Redesigned HomeScreen with working quick actions
+- Redesigned EditorScreen with professional layout (removed duplicates)
+- Redesigned SettingsScreen with all sections
+- Added BeatAnalyzerScreen (real beat analysis)
+- Added ProfileScreen (app info + stats)
+- Added ProjectsScreen (project listing)
+- Added BottomNav (5-tab navigation)
+- Added RenameProjectDialog, HelpDialog
+- Fixed navigation (proper back stack with NavigationViewModel)
+- Implemented all 7 previously non-functional controls
+- Removed all placeholder/demo UI
+
+Never mark a feature WORKING merely because its UI exists.

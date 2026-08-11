@@ -10,14 +10,11 @@ import android.graphics.Shader
 import android.os.Build
 import android.view.LayoutInflater
 import android.view.ViewGroup
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -59,7 +56,6 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -86,13 +82,11 @@ import dev.phonk.editor.model.TextLayer
 import dev.phonk.editor.model.evaluateOverlayFx
 import dev.phonk.editor.preview.PlayerController
 import dev.phonk.editor.settings.SettingsManager
-import dev.phonk.editor.ui.components.PhonkIconButton
 import dev.phonk.editor.util.TimeUtils
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import kotlinx.coroutines.Dispatchers
@@ -149,12 +143,12 @@ fun EditorPreview(
     onOverlayTransformEnd: () -> Unit,
     onOverlayTransformCancel: () -> Unit,
     onEditText: (String) -> Unit,
+    aspectRatio: String,
+    fullscreen: Boolean,
+    onToggleFullscreen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
-    var fullscreen by remember { mutableStateOf(false) }
-    var aspect by remember { mutableStateOf(9f / 16f) }
-    var showControls by remember { mutableStateOf(true) }
     val imageCache = remember { mutableStateMapOf<String, ImageBitmap>() }
     val totalMs = project?.videoDurationMs ?: 0L
 
@@ -176,18 +170,19 @@ fun EditorPreview(
     val frame = computeFxFrame(project, destPlayheadMs, positionMs, fxPhase)
 
     BoxWithConstraints(
-        modifier = modifier
-            .clip(RoundedCornerShape(if (fullscreen) 0.dp else 14.dp))
-            .background(Color.Black)
-            .clickable { showControls = !showControls },
+        modifier = modifier.background(Color(0xFF09090E)),
         contentAlignment = Alignment.Center,
     ) {
         val ld = LocalDensity.current
         val previewW = with(ld) { maxWidth.toPx() }
         val previewH = with(ld) { maxHeight.toPx() }
+        val contentBoxModifier = if (fullscreen) {
+            Modifier.fillMaxSize()
+        } else {
+            Modifier.aspectRatio(aspectFor(aspectRatio))
+        }
         Box(
-            modifier = Modifier
-                .then(if (fullscreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth().aspectRatio(aspect))
+            modifier = contentBoxModifier
                 .graphicsLayer {
                     translationX = frame.transX
                     translationY = frame.transY
@@ -286,85 +281,22 @@ fun EditorPreview(
                 destMs = destPlayheadMs,
                 sourceMs = positionMs,
                 canvasW = previewW.toInt(),
-                canvasH = if (fullscreen) previewH.toInt() else (previewW / aspect).toInt(),
+                canvasH = previewH.toInt(),
                 modifier = Modifier
                     .zIndex(5f)
                     .align(Alignment.TopStart)
                     .padding(10.dp),
             )
         }
-
-        AnimatedVisibility(visible = showControls, enter = fadeIn(), exit = fadeOut()) {
-            Column(Modifier.fillMaxSize()) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(Color.Black.copy(alpha = 0.45f))
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        project?.name ?: stringResource(R.string.untitled),
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f),
-                    )
-                    AspectChip("9:16", aspect == 9f / 16f) { aspect = 9f / 16f }
-                    AspectChip("1:1", aspect == 1f) { aspect = 1f }
-                    AspectChip("16:9", aspect == 16f / 9f) { aspect = 16f / 9f }
-                    Spacer(Modifier.width(6.dp))
-                    PhonkIconButton(
-                        icon = Icons.Filled.Fullscreen,
-                        contentDescription = stringResource(R.string.fullscreen),
-                        onClick = { fullscreen = !fullscreen },
-                        tint = Color.White,
-                        background = Color.White.copy(alpha = 0.15f),
-                        size = 34.dp,
-                    )
-                }
-
-                Spacer(Modifier.weight(1f))
-
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PhonkIconButton(
-                        icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = if (isPlaying) stringResource(R.string.pause) else stringResource(R.string.play),
-                        onClick = onPlayPause,
-                        tint = Color.White,
-                        background = scheme.primary,
-                        size = 40.dp,
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        TimeUtils.formatClock(positionMs),
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp)
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(Color.White.copy(alpha = 0.25f)),
-                    )
-                    Text(
-                        TimeUtils.formatClock(totalMs),
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 12.sp,
-                    )
-                }
-            }
-        }
     }
+}
+
+private fun aspectFor(label: String): Float = when (label) {
+    "1:1" -> 1f
+    "9:16" -> 9f / 16f
+    "4:5" -> 4f / 5f
+    "2.35:1" -> 2.35f
+    else -> 16f / 9f
 }
 
 /** Clip effects whose live preview continuously animates (consume the phase clock). */
@@ -791,8 +723,8 @@ private fun DebugOverlayPanel(
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier) {
-        val activeTexts = project.textLayers.filter { destMs in it.startMs until it.endMs }
-        val activeOverlays = project.overlays.filter { destMs in it.startMs until it.endMs }
+        val activeTexts = project.textLayers.filter { it.isActiveAt(destMs) }
+        val activeOverlays = project.overlays.filter { it.isActiveAt(destMs) }
 
         var beatPulse = 1f
         if (project.beatSync) {

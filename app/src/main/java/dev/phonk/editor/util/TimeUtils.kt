@@ -3,13 +3,12 @@ package dev.phonk.editor.util
 import java.util.Locale
 
 object TimeUtils {
-    /** 34259 -> "0:34.259" */
+    /** 34259 -> "00:34" */
     fun formatClock(ms: Long): String {
         val totalSeconds = ms / 1000L
         val minutes = totalSeconds / 60L
         val seconds = totalSeconds % 60L
-        val millis = ms % 1000L
-        return String.format(Locale.US, "%d:%02d.%03d", minutes, seconds, millis)
+        return String.format(Locale.US, "%02d:%02d", minutes, seconds)
     }
 
     /** 34259 -> "00:00:34.259" for ffmpeg timestamps. */

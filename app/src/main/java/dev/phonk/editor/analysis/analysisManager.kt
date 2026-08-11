@@ -7,11 +7,13 @@ import android.util.Log
 import dev.phonk.editor.model.AnalysisResult
 import dev.phonk.editor.native.PhonkNative
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -59,8 +61,21 @@ class AnalysisManager(
                 }
                 _state.value = AnalysisState.Running(Phase.ANALYZING, 0f)
                 val json = withContext(Dispatchers.Default) {
-                    PhonkNative.nativeAnalyzeAudio(decoded.samples, decoded.sampleRate)
+                    coroutineContext.ensureActive()
+                    val future = async(Dispatchers.Default) {
+                        PhonkNative.nativeAnalyzeAudio(decoded.samples, decoded.sampleRate)
+                    }
+                    // Poll for cancellation while native runs
+                    while (!future.isCompleted) {
+                        if (cancelled) {
+                            future.cancel()
+                            throw CancellationException("Analysis cancelled")
+                        }
+                        Thread.sleep(50)
+                    }
+                    future.await()
                 }
+                coroutineContext.ensureActive()
                 val result = AnalysisJson.parseResult(json)
                 val withDuration = result.copy(durationMs = decoded.durationMs)
                 Log.i(TAG, "analyze done beats=" + withDuration.beats.size + " drops=" + withDuration.drops.size + " durationMs=" + withDuration.durationMs)

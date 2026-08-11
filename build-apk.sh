@@ -29,8 +29,12 @@ echo "[phonk] gradle assembleDebug (first run may take several minutes)..."
 gradle assembleDebug --no-daemon
 
 APK="app/build/outputs/apk/debug/app-debug.apk"
+SDCARD_APK="/sdcard/app-debug.apk"
 if [[ -f "$APK" ]]; then
   echo "[phonk] OK: $APK"
+  if [[ -f "$SDCARD_APK" ]]; then
+    echo "[phonk] copied to: $SDCARD_APK"
+  fi
   echo "[phonk] install with: adb install -r $APK"
 else
   echo "[phonk] FAILED: no APK produced"

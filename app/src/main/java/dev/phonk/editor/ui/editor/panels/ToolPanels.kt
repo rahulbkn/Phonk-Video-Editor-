@@ -70,13 +70,12 @@ fun EffectsPanel(
             )
             Spacer(Modifier.height(6.dp))
         }
+        // Each effect appears exactly once, organized by category
         EffectCategory(stringResource(R.string.fx_category_beat)) {
             listOf(
                 NamedEffect(EffectKind.FLASH, R.string.fx_beat_flash),
                 NamedEffect(EffectKind.SHAKE, R.string.fx_beat_shake),
                 NamedEffect(EffectKind.ZOOM, R.string.fx_beat_zoom),
-                NamedEffect(EffectKind.BLUR, R.string.fx_beat_blur),
-                NamedEffect(EffectKind.GLITCH, R.string.fx_beat_glitch),
                 NamedEffect(EffectKind.RGBSPLIT, R.string.fx_beat_rgb),
             ).forEach { e -> EffectChip(e.labelRes, e.kind, onAdd) }
         }
@@ -88,14 +87,6 @@ fun EffectsPanel(
                 NamedEffect(EffectKind.FADE, R.string.fx_film),
                 NamedEffect(EffectKind.BRIGHTNESS, R.string.adj_brightness),
                 NamedEffect(EffectKind.CONTRAST, R.string.adj_contrast),
-            ).forEach { e -> EffectChip(e.labelRes, e.kind, onAdd) }
-        }
-        Spacer(Modifier.height(6.dp))
-        EffectCategory(stringResource(R.string.fx_category_anime)) {
-            listOf(
-                NamedEffect(EffectKind.FLASH, R.string.fx_impact),
-                NamedEffect(EffectKind.SHAKE, R.string.fx_screen_shake),
-                NamedEffect(EffectKind.ZOOM, R.string.fx_speed_lines),
             ).forEach { e -> EffectChip(e.labelRes, e.kind, onAdd) }
         }
     }
@@ -173,7 +164,7 @@ fun TransitionsPanel(
         PhonkSlider(
             value = durationMs.toFloat(),
             onValueChange = { onDuration(it.toLong()) },
-            valueRange = 100f..1500f,
+            valueRange = 0f..3000f,
         )
         Text(stringResource(R.string.tr_duration) + ": ${durationMs}ms", fontSize = 10.sp, color = scheme.onSurfaceVariant)
     }
@@ -404,6 +395,12 @@ fun BeatPanel(
             Text(stringResource(R.string.beat_bpm, bpm), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = scheme.primary)
         } else {
             PhonkButton(stringResource(R.string.beat_detect), onClick = onDetect, primary = true, modifier = Modifier.padding(vertical = 4.dp))
+            Text(
+                stringResource(R.string.beat_detect_first),
+                fontSize = 10.sp,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 4.dp),
+            )
         }
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.beat_auto_cut), fontSize = 10.sp, color = scheme.onSurfaceVariant)
@@ -518,31 +515,27 @@ fun MediaPanel(
     onImportPhoto: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().padding(12.dp)) {
-        SectionHeader(stringResource(R.string.tool_media))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MediaTile(stringResource(R.string.import_videos), scheme.primary, Modifier.weight(1f), onImportVideo)
-            MediaTile(stringResource(R.string.import_audio), scheme.tertiary, Modifier.weight(1f), onImportAudio)
-            MediaTile(stringResource(R.string.import_photos), scheme.secondary, Modifier.weight(1f), onImportPhoto)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            MediaTile(stringResource(R.string.import_videos), Modifier.weight(1f), onImportVideo)
+            MediaTile(stringResource(R.string.import_audio), Modifier.weight(1f), onImportAudio)
+            MediaTile(stringResource(R.string.import_photos), Modifier.weight(1f), onImportPhoto)
         }
-        Spacer(Modifier.height(6.dp))
-        Text(stringResource(R.string.media_note), fontSize = 10.sp, color = scheme.onSurfaceVariant)
     }
 }
 
 @Composable
-private fun MediaTile(label: String, tint: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
+private fun MediaTile(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .height(60.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(scheme.surfaceVariant.copy(alpha = 0.7f))
-            .border(1.dp, tint.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .height(40.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color(0xFF17171F))
+            .border(1.dp, Color(0xFF292934), RoundedCornerShape(6.dp))
             .clickable { onClick() },
     ) {
-        Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = scheme.onSurface)
+        Text(label, fontSize = 10.sp, fontWeight = FontWeight.Medium, color = Color(0xFFC9C9D2))
     }
 }
 
