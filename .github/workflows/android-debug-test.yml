@@ -1,8 +1,13 @@
-name: Android Debug Build + Firebase Test Lab
+name: Android Debug Build + Test (Firebase-optional)
 
-# Runs on push to main/dev or manual dispatch. Builds the debug APK, runs
-# Firebase Test Lab, parses results, and notifies the AI debug orchestrator
-# on failure (webhook) AND leaves artifacts that a polling worker can consume.
+# Runs on push to main/dev or manual dispatch. Builds the debug APK and runs a
+# verification gate:
+#   - If FIREBASE_PROJECT_ID + FIREBASE_SERVICE_ACCOUNT secrets are set:
+#     runs Firebase Test Lab, parses results, notifies the AI orchestrator.
+#   - Otherwise: runs the local unit-test gate (deterministic, free) and parses
+#     Gradle JUnit XMLs. This is the no-Firebase failure source for the
+#     AI debug loop.
+# On failure the ci-results artifact is left for the polling worker.
 
 on:
   workflow_dispatch:
@@ -25,6 +30,7 @@ jobs:
       apk_path: ${{ steps.locate-apk.outputs.apk_path }}
       has_instrumentation: ${{ steps.detect.outputs.has_instrumentation }}
       test_apk_path: ${{ steps.locate-test-apk.outputs.test_apk_path }}
+      has_firebase: ${{ steps.firebase-check.outputs.has_firebase }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,6 +69,18 @@ jobs:
             echo "has_instrumentation=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_instrumentation=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check for Firebase secrets
+        id: firebase-check
+        env:
+          PROJECT: ${{ secrets.FIREBASE_PROJECT_ID }}
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -n "$PROJECT" ] && [ -n "$SA" ]; then
+            echo "has_firebase=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_firebase=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run local checks (lint, unit tests)
@@ -109,9 +127,18 @@ jobs:
           path: ${{ steps.locate-test-apk.outputs.test_apk_path }}
           retention-days: 14
 
+      - name: Upload unit-test result XMLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: app/build/test-results/testDebugUnitTest
+          retention-days: 14
+          if-no-files-found: ignore
+
   firebase-test-lab:
     name: Firebase Test Lab
     needs: build
+    if: needs.build.outputs.has_firebase == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -252,6 +279,51 @@ PY
           RENDER_WEBHOOK_SECRET: ${{ secrets.RENDER_WEBHOOK_SECRET }}
 
       - name: Fail job if Firebase Test Lab failed
+        if: always()
+        run: |
+          STATUS=$(python3 -c "import json;print(json.load(open('ci-results/summary.json'))['status'])")
+          echo "Final status: $STATUS"
+          if [ "$STATUS" = "failed" ]; then
+            exit 1
+          fi
+
+  local-gate:
+    name: Local unit-test gate (no Firebase)
+    needs: build
+    if: needs.build.outputs.has_firebase == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download unit-test result XMLs
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-test-results
+          path: app/build/test-results/testDebugUnitTest
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Parse local unit-test results
+        id: parse
+        run: python3 scripts/parse_local_results.py
+
+      - name: Write job summary
+        if: always()
+        run: cat ci-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload ci-results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-results
+          path: ci-results
+          retention-days: 30
+
+      - name: Fail job if unit tests failed
         if: always()
         run: |
           STATUS=$(python3 -c "import json;print(json.load(open('ci-results/summary.json'))['status'])")

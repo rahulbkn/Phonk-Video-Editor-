@@ -144,6 +144,33 @@ def latest_failed_run_for_branch(repo: str, branch: str, workflow: str | None = 
     }
 
 
+def recent_failed_runs(repo: str, workflow: str | None = None,
+                       branch_prefix: str | None = None, limit: int = 10) -> list[dict[str, Any]]:
+    """List recent failed runs, optionally filtered to a branch prefix
+    (e.g. 'feature/ai-fix-') so the worker can pick up retry failures."""
+    url = f"{API}/actions/runs?status=failure&per_page={limit}"
+    if workflow:
+        url += f"&name={workflow}"
+    try:
+        data = _request("GET", url)
+    except GitHubError:
+        return []
+    runs = []
+    for run in data.get("workflow_runs", []):
+        branch = run.get("head_branch", "")
+        if branch_prefix and not branch.startswith(branch_prefix):
+            continue
+        runs.append({
+            "databaseId": run.get("id"),
+            "displayTitle": run.get("display_title", ""),
+            "workflowName": run.get("name", ""),
+            "headBranch": branch,
+            "conclusion": run.get("conclusion"),
+            "headSha": run.get("head_sha", ""),
+        })
+    return runs
+
+
 def workflow_run_url(repo: str, run_id: str) -> str:
     return f"https://github.com/{repo}/actions/runs/{run_id}"
 
@@ -168,3 +195,25 @@ def download_run_artifacts(repo: str, run_id: str, dest: Path | str) -> None:
                 out.write_bytes(resp.read())
         except (urllib.error.HTTPError, urllib.error.URLError, OSError) as exc:
             raise GitHubError(f"artifact download failed: {exc}") from exc
+
+
+def fetch_run_summary(repo: str, run_id: str, tmp_dir: Path | str) -> dict[str, Any]:
+    """Download the ci-results artifact of a failed run and return its
+    summary.json. Falls back to a minimal failed stub if unavailable."""
+    stub: dict[str, Any] = {"status": "failed", "run_id": str(run_id)}
+    try:
+        download_run_artifacts(repo, str(run_id), tmp_dir)
+    except GitHubError:
+        return stub
+    for zipped in sorted(Path(tmp_dir).glob("ci-results*.zip")):
+        try:
+            import zipfile
+            with zipfile.ZipFile(zipped) as zf:
+                if "ci-results/summary.json" in zf.namelist():
+                    summary = json.loads(zf.read("ci-results/summary.json"))
+                    stub.update(summary)
+                    stub["run_id"] = str(run_id)
+                    return stub
+        except (OSError, zipfile.BadZipFile, json.JSONDecodeError):
+            continue
+    return stub

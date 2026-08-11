@@ -70,17 +70,30 @@ class Worker:
 
     # ---------- polling ----------
     def poll_for_failures(self, repo: str, workflow_name: str | None = None) -> int:
-        """Check for recently failed workflow runs and enqueue jobs for them."""
+        """Check for recently failed workflow runs and enqueue jobs for them.
+
+        Polls failed runs on `main` AND on `feature/ai-fix-*` branches
+        (retry detection — the verify workflow failing on a pushed fix branch
+        must feed back into the debug loop).
+        """
         enqueued = 0
-        for branch in ("main",):
-            run = gh.latest_failed_run_for_branch(repo, branch, workflow=workflow_name)
-            if not run:
-                continue
+        candidates: list[tuple[str, dict[str, Any]]] = []
+
+        main_run = gh.latest_failed_run_for_branch(repo, "main", workflow=workflow_name)
+        if main_run:
+            candidates.append(("main", main_run))
+
+        for run in gh.recent_failed_runs(repo, workflow=workflow_name,
+                                         branch_prefix="feature/ai-fix-"):
+            candidates.append((run["headBranch"], run))
+
+        seen: set[str] = set()
+        for branch, run in candidates:
             run_id = str(run.get("databaseId", ""))
-            if not run_id:
+            if not run_id or run_id in seen:
                 continue
-            job = self._find_by_run_id(run_id)
-            if job:
+            seen.add(run_id)
+            if self._find_by_run_id(run_id):
                 continue  # already handled
             job = Job({
                 "repository": repo,
@@ -115,6 +128,15 @@ class Worker:
         self.store.save(job)
         try:
             summary = job.data.get("summary", {})
+            if job.data.get("branch", "main") != "main":
+                # fix-branch retry: fetch the real failure summary from the
+                # failed verify workflow run so the AI sees actual test output
+                tmp = Path(env("AI_DEBUG_DATA_DIR", "./.ai-debug-data")) / "tmp" / job.job_id
+                tmp.mkdir(parents=True, exist_ok=True)
+                fetched = gh.fetch_run_summary(
+                    job.repository, str(job.data.get("run_id", job.job_id)), tmp)
+                if fetched.get("status") == "failed":
+                    summary = {**summary, **fetched}
             result = run_orchestrator_job(self.cfg, job, summary, str(job.data.get("run_id", job.job_id)))
             status = "SUCCESS" if result.get("status") == "pushed_for_ci_verification" else result.get("status", "FAILED")
             job.touch(status=status, result=result)

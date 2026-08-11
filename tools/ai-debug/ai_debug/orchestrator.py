@@ -75,7 +75,30 @@ def _clone_repo(workdir: Path, repo: str, branch: str) -> Path:
     if gh.is_fix_branch(branch):
         _sh(["git", "fetch", "origin", branch], cwd=repo_dir)
         _sh(["git", "checkout", branch], cwd=repo_dir)
+    _write_local_properties(repo_dir)
     return repo_dir
+
+
+def _write_local_properties(repo_dir: Path) -> None:
+    """Point Gradle at the Android SDK + CMake when no local.properties is
+    committed.
+
+    Reads env vars (set by the deploy script / worker):
+      - ANDROID_HOME or AI_DEBUG_ANDROID_SDK  -> sdk.dir
+      - AI_DEBUG_CMAKE_DIR                    -> cmake.dir (Termux: /usr)
+    """
+    if (repo_dir / "local.properties").exists():
+        return
+    sdk = env("AI_DEBUG_ANDROID_SDK", env("ANDROID_HOME", ""))
+    cmake_dir = env("AI_DEBUG_CMAKE_DIR", "")
+    lines = []
+    if sdk:
+        lines.append(f"sdk.dir={sdk}")
+    if cmake_dir:
+        lines.append(f"cmake.dir={cmake_dir}")
+    if lines:
+        (repo_dir / "local.properties").write_text(
+            "\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _load_branch_state(repo_dir: Path) -> dict[str, Any]:
