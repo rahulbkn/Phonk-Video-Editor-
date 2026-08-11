@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
@@ -22,13 +23,20 @@ import kotlin.math.roundToLong
 private data class TrackDef(val label: String, val color: Int)
 
 /**
- * Pan/zoom multi-track waveform + beat/drop/cut editor.
- * Tracks (top→bottom): Video, Audio (waveform), Overlay, Text, Effect.
- * Interactions:
- *  - tap a clip -> select it (onSelectClip)
- *  - double-tap a clip -> split at that position (onClipSplit)
- *  - drag the trim handles of the selected clip -> onTrimStart/onTrimEnd
- *  - touch/drag lower half -> live seek scrub (onSeekTo, fires continuously while dragging)
+ * Pan/zoom multi-track editing timeline.
+ * Tracks (top→bottom): Video (filmstrip), Audio (real waveform), Overlay, Text,
+ * Effects, Audio FX. All time↔pixel conversions flow through [TimelineController]
+ * so every element (clips, bars, keyframes, markers, ruler, playhead) stays
+ * aligned on one shared time axis.
+ *
+ * Gesture priority (per the editor spec):
+ *   1. selected clip left trim handle
+ *   2. selected clip right trim handle
+ *   3. selected overlay/text bar (trim handles, then body move)
+ *   4. playhead
+ *   5. empty-timeline seek
+ *   6. ruler drag = horizontal scroll
+ * The first match owns the whole gesture until release.
  */
 class TimelineView @JvmOverloads constructor(
     context: Context,
@@ -54,31 +62,47 @@ class TimelineView @JvmOverloads constructor(
     var onSetOverlayTiming: ((id: String, startMs: Long, endMs: Long) -> Unit)? = null
 
     private val tracks = listOf(
-        TrackDef("Video", Color.parseColor("#D7B9F2")),
-        TrackDef("Audio", Color.parseColor("#D7B9F2")),
-        TrackDef("Overlay", Color.parseColor("#D7B9F2")),
-        TrackDef("Text", Color.parseColor("#D7B9F2")),
-        TrackDef("Effects", Color.parseColor("#D7B9F2")),
+        TrackDef("Video", Color.parseColor("#A855F7")),
+        TrackDef("Audio", Color.parseColor("#A855F7")),
+        TrackDef("Overlay", Color.parseColor("#A855F7")),
+        TrackDef("Text", Color.parseColor("#A855F7")),
+        TrackDef("Effects", Color.parseColor("#6D28D9")),
+        TrackDef("Audio FX", Color.parseColor("#3F3F4E")),
     )
+
+    private val density get() = resources.displayMetrics.density
+
+    // Ruler occupies the top of the view; tracks render below it.
+    private val rulerH = 24f
+    private val trackAreaTop = rulerH + 4f
+    private val trackLabelWidth = 68f
+    private val labelZone get() = trackLabelWidth + 4f
+
+    private fun trackH(): Float = (height - trackAreaTop - 4f) / tracks.size
+    private fun trackTop(i: Int): Float = trackAreaTop + i * trackH()
+    private fun rowAt(y: Float): Int = if (y < trackAreaTop) -1
+        else ((y - trackAreaTop) / trackH()).toInt().coerceIn(0, tracks.size - 1)
 
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val wavePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val beatPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
     private val dropPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val playPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 3f }
+    private val playPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val rulerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 1.5f }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 20f; isFakeBoldText = true }
     private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val clipBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
     private val selPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val handlePath = Path()
 
     /**
      * Filmstrip thumbnails on the video track. Each cell is a fixed-width real
      * frame preview; the cell count adapts to the zoom level so thumbnails never
      * overlap (cells are capped to the clip's pixel span and one-per-second).
      */
-    private val thumbW = 28f * resources.displayMetrics.density
+    private val thumbW = 28f * density
     private val thumbPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val thumbExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "timeline-thumbs").apply { priority = Thread.MIN_PRIORITY }
@@ -90,25 +114,22 @@ class TimelineView @JvmOverloads constructor(
     private var lastX = 0f
     private var downX = 0f
     private var downY = 0f
-    private var dragging = false
-    private val trackLabelWidth = 68f
 
     // Density-aware touch slop (Android's real guidance) instead of raw pixels.
     private val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop.toFloat()
-    private val trimSlopPx get() = touchSlop * 1.6f
+    private val trimSlopPx get() = 10f * density
+    private val playSlopPx get() = 18f * density
 
-    private enum class DragMode { NONE, TRIM_START, TRIM_END }
-    private var dragMode = DragMode.NONE
+    private enum class Gesture { NONE, CLIP_TRIM_START, CLIP_TRIM_END, OVERLAY_TRIM_START, OVERLAY_TRIM_END, OVERLAY_MOVE, PLAYHEAD, SEEK, SCROLL }
+
+    private var gesture = Gesture.NONE
+
     private var lastTapTime = 0L
     private var lastTapX = 0f
 
-    /** True while the current stroke is a seek gesture (started on the lower half).
-     *  While set, MOVE events scrub the player instead of panning the viewport. */
-    private var scrubGesture = false
-
     /** Minimum overlay window width when trimming on the timeline (matches the VM). */
     private companion object {
-        const val MIN_OVERLAY_DURATION = 100L
+        const val MIN_DURATION = 100L
     }
 
     private enum class OverlayDragMode { MOVE, TRIM_START, TRIM_END }
@@ -125,6 +146,11 @@ class TimelineView @JvmOverloads constructor(
     }
 
     private var overlayDrag: OverlayDrag? = null
+
+    /** Live state while the selected clip is being trimmed (both handles). */
+    private var clipTrimId: String? = null
+    private var clipTrimLiveStart = 0L
+    private var clipTrimLiveEnd = 0L
 
     init {
         isFocusable = true
@@ -152,51 +178,107 @@ class TimelineView @JvmOverloads constructor(
         val h = height.toFloat()
         val primary = context.getColor(R.color.primary)
         val accent = context.getColor(R.color.accent)
-        val textPrimary = context.getColor(R.color.text_primary)
-        val textSecondary = context.getColor(R.color.text_secondary)
-        val surfaceVariant = context.getColor(R.color.surface_variant)
+        val tH = trackH()
 
-        val rulerH = 24f
-        val trackAreaTop = rulerH + 4f
-        val trackH = (h - trackAreaTop - 4f) / tracks.size
-        val labelZone = trackLabelWidth + 4f
-
-        // track backgrounds - use visible dark color
+        // 1. Track backgrounds (subtle dark) + labels.
         tracks.forEachIndexed { i, track ->
-            val top = trackAreaTop + i * trackH
-            // Empty track: visible dark background
+            val top = trackTop(i)
             trackPaint.color = Color.parseColor("#1A1A24")
-            canvas.drawRect(labelZone, top, w - 4f, top + trackH - 2f, trackPaint)
-            // Track separator line
+            canvas.drawRect(labelZone, top, w - 4f, top + tH - 2f, trackPaint)
             trackPaint.color = Color.parseColor("#2A2A38")
-            canvas.drawLine(labelZone, top + trackH - 2f, w - 4f, top + trackH - 2f, trackPaint)
+            canvas.drawLine(labelZone, top + tH - 2f, w - 4f, top + tH - 2f, trackPaint)
             labelPaint.color = Color.parseColor("#C9C9D2")
-            canvas.drawText(track.label, 6f, top + trackH / 2f + 6f, labelPaint)
+            canvas.drawText(track.label, 6f, top + tH / 2f + 6f, labelPaint)
         }
 
-        // waveform on audio track (track index 1)
-        drawWaveform(canvas, labelZone, 8f + 1 * trackH, w - 4f, trackH - 4f)
+        // 2. Real (time-mapped) waveform on the audio track.
+        drawWaveform(canvas, labelZone, trackTop(1), w - 4f, tH - 4f)
 
-        // clip segments on video track
+        // 3. Video clips + filmstrip (live trim window when trimming).
         val wantThumbs = mutableListOf<Pair<String?, Long>>()
-        drawClips(canvas, labelZone, 8f + 0 * trackH, trackH - 4f, primary, wantThumbs)
+        drawClips(canvas, labelZone, trackTop(0), tH - 4f, primary, wantThumbs)
         requestThumbnails(wantThumbs)
 
-        // overlay bars on overlay track (index 2)
-        drawOverlayBars(canvas, labelZone, 8f + 2 * trackH, trackH - 4f, Color.parseColor("#A855F7"),
-            project.overlays)
-        // text bars on text track (index 3)
-        drawOverlayBars(canvas, labelZone, 8f + 3 * trackH, trackH - 4f, Color.parseColor("#A855F7"),
-            project.textLayers)
-        // effects on effect track (index 4)
-        drawBars(canvas, labelZone, 8f + 4 * trackH, trackH - 4f, Color.parseColor("#6D28D9"),
-            project.clips.filter { it.effect != dev.phonk.editor.model.EffectKind.NONE }.map { it.destStartMs to it.destEndMs })
+        // 4. Overlay + text bars (with their own keyframes).
+        drawOverlayBars(canvas, labelZone, trackTop(2), tH - 4f, Color.parseColor("#A855F7"), project.overlays)
+        drawOverlayBars(canvas, labelZone, trackTop(3), tH - 4f, Color.parseColor("#A855F7"), project.textLayers)
 
-        // beat ticks across all tracks
+        // 5. Effect bars on the effects track.
+        drawBars(canvas, labelZone, trackTop(4), tH - 4f, Color.parseColor("#6D28D9"),
+            project.clips.filter { it.effect != dev.phonk.editor.model.EffectKind.NONE }
+                .map { it.destStartMs to it.destEndMs })
+
+        // 6. Beat ticks, drop markers, grade keyframes.
+        drawBeatsAndDrops(canvas, labelZone, w, h, tH)
+        drawGradeKeyframes(canvas, labelZone, trackTop(4), tH - 4f)
+
+        // 7. Time ruler.
+        drawTimeRuler(canvas, labelZone, w, 4f, 18f, Color.parseColor("#C9C9D2"))
+
+        // 8. Playhead: thin needle + compact handle (drawn above tracks but
+        //    below the trim handles so a nearby handle stays visible).
+        drawPlayhead(canvas, h)
+
+        // 9. Selection trim handles on top so the playhead can never hide them.
+        drawTrimHandles(canvas, trackTop(0), tH - 4f, primary)
+        drawOverlayTrimHandles(canvas, trackTop(2), tH - 4f, Color.parseColor("#A855F7"), project.overlays)
+        drawOverlayTrimHandles(canvas, trackTop(3), tH - 4f, Color.parseColor("#A855F7"), project.textLayers)
+
+        // 10. Overlay/text titles re-drawn last so the playhead needle (and
+        //     handle) never obscures a layer's label.
+        drawOverlayLabels(canvas, labelZone, trackTop(2), tH - 4f, project.overlays)
+        drawOverlayLabels(canvas, labelZone, trackTop(3), tH - 4f, project.textLayers)
+    }
+
+    private fun drawPlayhead(canvas: Canvas, h: Float) {
+        val playX = controller.timeToX(controller.currentMs)
+        playPaint.strokeWidth = 2f * density
+        playPaint.color = Color.parseColor("#F5F5F7")
+        canvas.drawLine(playX, 4f, playX, h - 8f, playPaint)
+        // small diamond handle at the top
+        val hs = 5f * density
+        val topY = 5f
+        handlePath.reset()
+        handlePath.moveTo(playX, topY)
+        handlePath.lineTo(playX - hs, topY + hs * 1.7f)
+        handlePath.lineTo(playX + hs, topY + hs * 1.7f)
+        handlePath.close()
+        handlePaint.color = Color.parseColor("#A855F7")
+        canvas.drawPath(handlePath, handlePaint)
+    }
+
+    /** Bright compact handles for the selected video clip (always on top). */
+    private fun drawTrimHandles(canvas: Canvas, top: Float, height: Float, primary: Int) {
+        val clip = selectedClip() ?: return
+        val x0 = controller.timeToX(if (clipTrimId == clip.id) clipTrimLiveStart else clip.destStartMs)
+        val x1 = controller.timeToX(if (clipTrimId == clip.id) clipTrimLiveEnd else clip.destEndMs)
+        val hw = 5f * density
+        handlePaint.color = Color.parseColor("#F5F5F7")
+        canvas.drawRect(x0 - hw, top, x0, top + height, handlePaint)
+        canvas.drawRect(x1, top, x1 + hw, top + height, handlePaint)
+        clipBorder.color = primary
+        canvas.drawRect(x0 - hw, top, x1 + hw, top + height, clipBorder)
+    }
+
+    /** Trim handles for the selected overlay/text bar. */
+    private fun drawOverlayTrimHandles(canvas: Canvas, top: Float, height: Float, color: Int, items: List<OverlayItem>) {
+        val id = selectedOverlayId ?: return
+        val item = items.firstOrNull { it.id == id } ?: return
+        val x0 = controller.timeToX(if (overlayDrag?.id == id) overlayDrag!!.liveStart else item.startMs)
+        val x1 = controller.timeToX(if (overlayDrag?.id == id) overlayDrag!!.liveEnd else item.endMs)
+        val hw = 5f * density
+        handlePaint.color = Color.parseColor("#F5F5F7")
+        canvas.drawRect(x0 - hw, top, x0, top + height, handlePaint)
+        canvas.drawRect(x1, top, x1 + hw, top + height, handlePaint)
+        clipBorder.color = color
+        canvas.drawRect(x0 - hw, top, x1 + hw, top + height, clipBorder)
+    }
+
+    private fun drawBeatsAndDrops(canvas: Canvas, left: Float, right: Float, h: Float, tH: Float) {
         beatPaint.color = withAlpha(Color.parseColor("#A855F7"), 180)
         project.beats.forEach { beat ->
             val x = controller.timeToX(beat.timestampMs.roundToLong())
-            if (x in labelZone..w) {
+            if (x in left..right) {
                 val amp = beat.confidence.coerceIn(0f, 1f)
                 val top = 8f
                 val bottom = h - 16f
@@ -204,42 +286,71 @@ class TimelineView @JvmOverloads constructor(
                 canvas.drawLine(x, bottom - tickH, x, bottom, beatPaint)
             }
         }
-
-        // drop markers
+        // drop markers as diamonds on the audio row
         dropPaint.color = Color.parseColor("#C084FC")
         project.drops.forEach { drop ->
             val x = controller.timeToX(drop.timestampMs.roundToLong())
-            if (x in labelZone..w) {
-                val cy = 8f + 1 * trackH + (trackH - 4f) / 2f
-                canvas.drawCircle(x, cy, 7f, dropPaint)
+            if (x in left..right) {
+                val cy = trackTop(1) + tH / 2f
+                drawDiamond(canvas, x, cy, 6f * density, dropPaint)
             }
         }
-
-        // time ruler at top
-        drawTimeRuler(canvas, labelZone, w, 4f, 18f, Color.parseColor("#C9C9D2"))
-
-        // playhead
-        val playX = controller.timeToX(controller.currentMs)
-        playPaint.color = Color.parseColor("#F5F5F7")
-        canvas.drawLine(playX, 4f, playX, h - 8f, playPaint)
-        handlePaint.color = Color.parseColor("#A855F7")
-        canvas.drawCircle(playX, 6f, 8f, handlePaint)
     }
 
+    /** Grade automation keyframes (real project timestamps) on the effects row. */
+    private fun drawGradeKeyframes(canvas: Canvas, left: Float, top: Float, height: Float) {
+        keyPaint.color = Color.parseColor("#FBBF24")
+        project.gradeKeyframes.forEach { k ->
+            val x = controller.timeToX(k.atMs)
+            if (x in left..width.toFloat()) {
+                drawDiamond(canvas, x, top + height / 2f, 5f * density, keyPaint)
+            }
+        }
+    }
+
+    private fun drawDiamond(canvas: Canvas, cx: Float, cy: Float, half: Float, paint: Paint) {
+        handlePath.reset()
+        handlePath.moveTo(cx, cy - half)
+        handlePath.lineTo(cx + half, cy)
+        handlePath.lineTo(cx, cy + half)
+        handlePath.lineTo(cx - half, cy)
+        handlePath.close()
+        canvas.drawPath(handlePath, paint)
+    }
+
+    /**
+     * Real audio energy curve drawn on the SAME time axis as the clips: each
+     * sample is mapped through source→destination→pixel so the waveform scrolls,
+     * zooms and aligns with the video exactly.
+     */
     private fun drawWaveform(canvas: Canvas, left: Float, top: Float, right: Float, height: Float) {
         val curve = project.analysisEnergyCurve()
         if (curve.isEmpty()) return
+        val total = project.videoDurationMs.coerceAtLeast(1L)
+        val sd = total.toDouble() / curve.size
         val mid = top + height / 2f
         val halfH = height * 0.42f
-        val w = right - left
         wavePaint.color = withAlpha(context.getColor(R.color.accent), 90)
-        val step = w / curve.size.coerceAtLeast(1)
         for (i in curve.indices) {
-            val x = left + i * step
+            val dest = sourceToDest((i * sd).toLong())
+            val x = controller.timeToX(dest)
+            if (x < left || x > right) continue
             val amp = maxOf(0f, minOf(1f, curve[i]))
-            val barH = halfH * amp
-            canvas.drawRect(x, mid - barH, x + step.coerceAtLeast(1f), mid + barH, wavePaint)
+            val barH = (halfH * amp).coerceAtLeast(1f)
+            canvas.drawRect(x - 1f, mid - barH, x + 1f, mid + barH, wavePaint)
         }
+    }
+
+    private fun sourceToDest(srcMs: Long): Long {
+        val clips = project.clips
+        if (clips.isEmpty()) return srcMs.coerceIn(0L, controller.totalMs)
+        val clip = clips.firstOrNull { srcMs in it.sourceStartMs until it.sourceEndMs }
+            ?: clips.lastOrNull { srcMs >= it.sourceStartMs } ?: return srcMs
+        val srcDur = (clip.sourceEndMs - clip.sourceStartMs).coerceAtLeast(1L)
+        val destDur = (clip.destEndMs - clip.destStartMs).coerceAtLeast(0L)
+        val ratio = destDur.toDouble() / srcDur
+        return (clip.destStartMs + ((srcMs - clip.sourceStartMs) * ratio).toLong())
+            .coerceIn(clip.destStartMs, clip.destEndMs)
     }
 
     private fun drawClips(
@@ -254,8 +365,6 @@ class TimelineView @JvmOverloads constructor(
         clipBorder.color = withAlpha(primary, 180)
         val selectedId = project.selectedClipId
         val videoUri = project.videoUri
-        // No cuts applied yet -> the whole source plays as one implicit segment,
-        // so the filmstrip is still drawn for the full destination timeline.
         val segments = if (project.clips.isEmpty()) {
             val end = controller.projectDurationMs().coerceAtLeast(1L)
             listOf(
@@ -271,8 +380,11 @@ class TimelineView @JvmOverloads constructor(
             project.clips
         }
         segments.forEach { clip ->
-            val x0 = controller.timeToX(clip.destStartMs)
-            val x1 = controller.timeToX(clip.destEndMs)
+            val trimming = clipTrimId == clip.id
+            val d0 = if (trimming) clipTrimLiveStart else clip.destStartMs
+            val d1 = if (trimming) clipTrimLiveEnd else clip.destEndMs
+            val x0 = controller.timeToX(d0)
+            val x1 = controller.timeToX(d1)
             if (x1 < left || x0 > w) return@forEach
             val leftC = x0.coerceAtLeast(left)
             val rightC = x1.coerceAtMost(w)
@@ -280,8 +392,6 @@ class TimelineView @JvmOverloads constructor(
             trackPaint.color = withAlpha(if (selected) primary else Color.parseColor("#A855F7"), if (selected) 160 else 100)
             canvas.drawRect(leftC, top, rightC, top + trackH, trackPaint)
 
-            // filmstrip: fixed-size real frame previews, one per second, capped so
-            // they always fit inside the clip span (no overlap at any zoom level)
             drawFilmstrip(canvas, clip, videoUri, x0, x1, leftC, rightC, top, trackH, wantThumbs)
 
             canvas.drawRect(leftC, top, rightC, top + trackH, clipBorder)
@@ -289,24 +399,13 @@ class TimelineView @JvmOverloads constructor(
                 selPaint.color = primary
                 canvas.drawRect(leftC, top, rightC, top + trackH, selPaint)
             }
-            // transition marker at clip start
-            if (!clip.transition.isNullOrBlank() && clip.destStartMs > 0L) {
+            if (!clip.transition.isNullOrBlank() && d0 > 0L) {
                 dropPaint.color = Color.parseColor("#C084FC")
                 canvas.drawCircle(x0, top + trackH / 2f, 5f, dropPaint)
             }
-            // trim handles
-            handlePaint.color = primary
-            canvas.drawRect(leftC, top, leftC + 4f, top + trackH, handlePaint)
-            canvas.drawRect(rightC - 4f, top, rightC, top + trackH, handlePaint)
         }
     }
 
-    /**
-     * Draws the actual video frame previews across the clip span. One cell per
-     * video-second, each a fixed [thumbW] wide; the count is capped by the clip's
-     * on-screen pixel span so thumbnails never overlap, even fully zoomed out.
-     * Missing frames are handed back in [wantThumbs] for background decoding.
-     */
     private fun drawFilmstrip(
         canvas: Canvas,
         clip: dev.phonk.editor.model.ClipSegment,
@@ -360,24 +459,15 @@ class TimelineView @JvmOverloads constructor(
         canvas.restore()
     }
 
-    /**
-     * Kick off background decoding for any missing filmstrip cells collected in
-     * [wantThumbs]. A generation counter drops stale invalidations while the user
-     * keeps panning/zooming.
-     */
     private fun requestThumbnails(want: List<Pair<String?, Long>>) {
         if (want.isEmpty()) return
         val byUri: Map<String?, List<Long>> = want.distinctBy { "${it.first}#${it.second}" }
             .groupBy({ it.first }, { it.second })
-        android.util.Log.d("TMB", "request cells=${want.size} uris=${byUri.keys.count { it != null }}")
         val gen = thumbGen.incrementAndGet()
         thumbExecutor.execute {
-            // Cells already decoded while this job queued are skipped inside decodeBatch.
             byUri.forEach { (uri, times) ->
                 TimelineThumbnailer.decodeBatch(context, uri, times)
             }
-            // Return to the main thread: clear requested marks and repaint if the
-            // user hasn't zoomed/panned us into a newer generation.
             post {
                 byUri.forEach { (uri, times) ->
                     times.forEach { ms ->
@@ -405,13 +495,6 @@ class TimelineView @JvmOverloads constructor(
         }
     }
 
-    /**
-     * Interactive overlay/text bars. The selected item is highlighted and gets
-     * left/right trim handles; hidden items render dimmed; a label is drawn when
-     * the bar is wide enough. While a bar is being dragged, its live window is
-     * drawn instead of the committed one so the user sees the change as it
-     * happens (the commit fires once on release).
-     */
     private fun drawOverlayBars(canvas: Canvas, left: Float, top: Float, trackH: Float, color: Int, items: List<OverlayItem>) {
         val w = width.toFloat() - 4f
         clipBorder.color = withAlpha(color, 180)
@@ -434,17 +517,35 @@ class TimelineView @JvmOverloads constructor(
             if (selected) {
                 selPaint.color = color
                 canvas.drawRect(x0.coerceAtLeast(left), top, x1.coerceAtMost(w), top + trackH - 4f, selPaint)
-                handlePaint.color = color
-                canvas.drawRect(x0, top, x0 + 4f, top + trackH - 4f, handlePaint)
-                canvas.drawRect(x1 - 4f, top, x1, top + trackH - 4f, handlePaint)
             }
-            if (x1 - x0 > 42f) {
-                textPaint.color = Color.WHITE
-                textPaint.textSize = 18f
-                val maxChars = ((x1 - x0) / 22f).toInt().coerceIn(1, 10)
-                val label = item.label.ifBlank { item.type }
-                canvas.drawText(label.take(maxChars), x0 + 6f, top + trackH / 2f + 6f, textPaint)
+            // item keyframes at their real project times
+            keyPaint.color = Color.parseColor("#FBBF24")
+            item.keyframes.forEach { k ->
+                val kx = controller.timeToX(k.atMs)
+                if (kx >= x0 && kx <= x1) {
+                    drawDiamond(canvas, kx, top + trackH / 2f, 4f * density, keyPaint)
+                }
             }
+        }
+    }
+
+    /** Titles for overlay/text bars, drawn after the playhead so the needle
+     * never covers them. Mirrors the geometry used by [drawOverlayBars]. */
+    private fun drawOverlayLabels(canvas: Canvas, left: Float, top: Float, trackH: Float, items: List<OverlayItem>) {
+        val w = width.toFloat() - 4f
+        for (item in items) {
+            val dragging = overlayDrag?.id == item.id
+            val startMs = if (dragging) overlayDrag!!.liveStart else item.startMs
+            val endMs = if (dragging) overlayDrag!!.liveEnd else item.endMs
+            val x0 = controller.timeToX(startMs)
+            val x1 = controller.timeToX(endMs)
+            if (x1 < left || x0 > w) continue
+            if (x1 - x0 <= 42f) continue
+            textPaint.color = Color.WHITE
+            textPaint.textSize = 18f
+            val maxChars = ((x1 - x0) / 22f).toInt().coerceIn(1, 10)
+            val label = item.label.ifBlank { item.type }
+            canvas.drawText(label.take(maxChars), x0 + 6f, top + trackH / 2f + 6f, textPaint)
         }
     }
 
@@ -461,21 +562,73 @@ class TimelineView @JvmOverloads constructor(
             .maxByOrNull { it.zIndex }
     }
 
-    /** Starts an overlay bar drag (move or trim) when the touch is on row 2/3. */
-    private fun detectOverlay(x: Float, y: Float): OverlayDrag? {
-        val trackH = (height - 16f) / tracks.size
-        val row = ((y - 8f) / trackH).toInt()
-        if (row != 2 && row != 3) return null
-        val t = controller.xToTime(x, width.toFloat())
-        val item = overlayAt(t, row) ?: return null
-        val x0 = controller.timeToX(item.startMs)
-        val x1 = controller.timeToX(item.endMs)
-        val mode = when {
-            abs(x - x0) <= trimSlopPx -> OverlayDragMode.TRIM_START
-            abs(x - x1) <= trimSlopPx -> OverlayDragMode.TRIM_END
-            else -> OverlayDragMode.MOVE
+    private fun overlayById(id: String): OverlayItem? =
+        project.textLayers.firstOrNull { it.id == id } ?: project.overlays.firstOrNull { it.id == id }
+
+    private fun selectedClip(): dev.phonk.editor.model.ClipSegment? =
+        project.clips.firstOrNull { it.id == project.selectedClipId }
+
+    /**
+     * Full gesture detection with the spec priority: clip trim handles, then
+     * selected overlay bar (trim handles → body move), then playhead, then seek.
+     * The ruler row maps to horizontal scroll.
+     */
+    private fun detectGesture(x: Float, y: Float): Gesture {
+        if (y < trackAreaTop) {
+            // Ruler zone: the playhead handle is drawn inside it, so grabbing
+            // near the playhead seeks; anywhere else on the ruler scrolls.
+            if (abs(x - controller.timeToX(controller.currentMs)) <= playSlopPx) return Gesture.PLAYHEAD
+            return Gesture.SCROLL
         }
-        return OverlayDrag(item.id, mode, x, item.startMs, item.endMs)
+        val row = rowAt(y)
+        val nearPlayhead = abs(x - controller.timeToX(controller.currentMs)) <= playSlopPx
+        if (row == 0) {
+            val clip = selectedClip()
+            if (clip != null) {
+                val x0 = controller.timeToX(clip.destStartMs)
+                val x1 = controller.timeToX(clip.destEndMs)
+                if (abs(x - x0) <= trimSlopPx) return Gesture.CLIP_TRIM_START
+                if (abs(x - x1) <= trimSlopPx) return Gesture.CLIP_TRIM_END
+            }
+        } else if (row == 2 || row == 3) {
+            val d = detectOverlay(x, y, row)
+            if (d != null) {
+                overlayDrag = d
+                return when (d.mode) {
+                    OverlayDragMode.TRIM_START -> Gesture.OVERLAY_TRIM_START
+                    OverlayDragMode.TRIM_END -> Gesture.OVERLAY_TRIM_END
+                    OverlayDragMode.MOVE -> Gesture.OVERLAY_MOVE
+                }
+            }
+        }
+        return if (nearPlayhead) Gesture.PLAYHEAD else Gesture.SEEK
+    }
+
+    /** Starts an overlay bar drag (move or trim) when the touch is on row 2/3. */
+    private fun detectOverlay(x: Float, y: Float, row: Int): OverlayDrag? {
+        val t = controller.xToTime(x, width.toFloat())
+        // selected item's handles have priority over every other item
+        val selId = selectedOverlayId
+        if (selId != null) {
+            val sel = overlayById(selId)
+            if (sel != null && row == if (sel.type == "Text") 3 else 2) {
+                val x0 = controller.timeToX(sel.startMs)
+                val x1 = controller.timeToX(sel.endMs)
+                val mode = when {
+                    abs(x - x0) <= trimSlopPx -> OverlayDragMode.TRIM_START
+                    abs(x - x1) <= trimSlopPx -> OverlayDragMode.TRIM_END
+                    t >= sel.startMs && t <= sel.endMs -> OverlayDragMode.MOVE
+                    else -> null
+                }
+                if (mode != null) {
+                    onSelectOverlay?.invoke(selId)
+                    return OverlayDrag(sel.id, mode, x, sel.startMs, sel.endMs)
+                }
+            }
+        }
+        val item = overlayAt(t, row) ?: return null
+        onSelectOverlay?.invoke(item.id)
+        return OverlayDrag(item.id, OverlayDragMode.MOVE, x, item.startMs, item.endMs)
     }
 
     private fun applyOverlayDrag(x: Float) {
@@ -484,18 +637,18 @@ class TimelineView @JvmOverloads constructor(
         val dx = ((x - d.downX) / width.toFloat() * controller.viewportMs).toLong()
         when (d.mode) {
             OverlayDragMode.MOVE -> {
-                val dur = (d.downEnd - d.downStart).coerceAtLeast(MIN_OVERLAY_DURATION)
+                val dur = (d.downEnd - d.downStart).coerceAtLeast(MIN_DURATION)
                 val s = (d.downStart + dx).coerceIn(0L, (total - dur).coerceAtLeast(0L))
                 d.liveStart = s
                 d.liveEnd = (s + dur).coerceAtMost(if (total > 0) total else s + dur)
             }
             OverlayDragMode.TRIM_START -> {
-                d.liveStart = (d.downStart + dx).coerceIn(0L, d.downEnd - MIN_OVERLAY_DURATION)
+                d.liveStart = (d.downStart + dx).coerceIn(0L, d.downEnd - MIN_DURATION)
                 d.liveEnd = d.downEnd
             }
             OverlayDragMode.TRIM_END -> {
                 d.liveStart = d.downStart
-                d.liveEnd = (d.downEnd + dx).coerceIn(d.downStart + MIN_OVERLAY_DURATION, if (total > 0) total else d.downStart + MIN_OVERLAY_DURATION)
+                d.liveEnd = (d.downEnd + dx).coerceIn(d.downStart + MIN_DURATION, if (total > 0) total else d.downStart + MIN_DURATION)
             }
         }
         invalidate()
@@ -552,72 +705,75 @@ class TimelineView @JvmOverloads constructor(
                 lastX = event.x
                 downX = event.x
                 downY = event.y
-                dragging = true
-                // Don't detect trim handles on DOWN — let user scrub anywhere.
-                // Trim handles activate only when explicitly dragged from the edge.
-                dragMode = DragMode.NONE
-                overlayDrag = detectOverlay(event.x, event.y)
-                // Scrub works on entire timeline when not dragging overlay
-                scrubGesture = overlayDrag == null && !scaleDetector.isInProgress
-                if (scrubGesture) {
-                    seekFromX(event.x)
+                gesture = detectGesture(event.x, event.y)
+                when (gesture) {
+                    Gesture.CLIP_TRIM_START, Gesture.CLIP_TRIM_END -> {
+                        val clip = selectedClip() ?: return true
+                        clipTrimId = clip.id
+                        clipTrimLiveStart = clip.destStartMs
+                        clipTrimLiveEnd = clip.destEndMs
+                    }
+                    Gesture.PLAYHEAD, Gesture.SEEK -> seekFromX(event.x)
+                    Gesture.OVERLAY_TRIM_START, Gesture.OVERLAY_TRIM_END, Gesture.OVERLAY_MOVE ->
+                        applyOverlayDrag(event.x)
+                    else -> Unit
                 }
+                return true
             }
             MotionEvent.ACTION_MOVE -> {
-                when {
-                    !scaleDetector.isInProgress && overlayDrag != null ->
-                        applyOverlayDrag(event.x)
-                    !scaleDetector.isInProgress && dragMode != DragMode.NONE -> {
-                        val t = controller.xToTime(event.x, width.toFloat())
-                        controller.currentMs = t
-                        onSeekTo?.invoke(t)
-                        invalidate()
-                    }
-                    scrubGesture && !scaleDetector.isInProgress -> {
-                        seekFromX(event.x)
-                    }
-                    dragging && !scaleDetector.isInProgress && dragMode == DragMode.NONE -> {
+                if (scaleDetector.isInProgress) return true
+                when (gesture) {
+                    Gesture.SCROLL -> {
                         val dxPx = event.x - lastX
                         lastX = event.x
-                        val ms = (dxPx / width.toFloat() * controller.viewportMs)
-                        controller.scrollBy(-ms.toLong())
+                        val ms = (dxPx / width.toFloat() * controller.viewportMs).toLong()
+                        controller.scrollBy(-ms)
                         invalidate()
                     }
+                    Gesture.CLIP_TRIM_START -> {
+                        val t = controller.xToTime(event.x, width.toFloat())
+                        clipTrimLiveStart = t.coerceIn(0L, clipTrimLiveEnd - MIN_DURATION)
+                        seekToClipEdge(clipTrimLiveStart)
+                    }
+                    Gesture.CLIP_TRIM_END -> {
+                        val t = controller.xToTime(event.x, width.toFloat())
+                        clipTrimLiveEnd = t.coerceIn(clipTrimLiveStart + MIN_DURATION, controller.totalMs)
+                        seekToClipEdge(clipTrimLiveEnd)
+                    }
+                    Gesture.OVERLAY_TRIM_START, Gesture.OVERLAY_TRIM_END, Gesture.OVERLAY_MOVE ->
+                        applyOverlayDrag(event.x)
+                    Gesture.PLAYHEAD, Gesture.SEEK -> seekFromX(event.x)
+                    else -> Unit
                 }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (overlayDrag != null && !scaleDetector.isInProgress) {
-                    commitOverlayDrag(event.x)
-                } else if (dragMode == DragMode.TRIM_START && !scaleDetector.isInProgress) {
-                    onTrimStart?.invoke(controller.xToTime(event.x, width.toFloat()))
-                } else if (dragMode == DragMode.TRIM_END && !scaleDetector.isInProgress) {
-                    onTrimEnd?.invoke(controller.xToTime(event.x, width.toFloat()))
-                } else if (
-                    dragMode == DragMode.NONE && overlayDrag == null &&
-                    abs(event.x - downX) < touchSlop &&
-                    abs(event.y - downY) < touchSlop
-                ) {
-                    handleTap(event.x, event.y)
+            MotionEvent.ACTION_UP -> {
+                val tapped = abs(event.x - downX) < touchSlop && abs(event.y - downY) < touchSlop && !scaleDetector.isInProgress
+                when (gesture) {
+                    Gesture.CLIP_TRIM_START -> { onTrimStart?.invoke(clipTrimLiveStart); onSeekTo?.invoke(clipTrimLiveStart) }
+                    Gesture.CLIP_TRIM_END -> { onTrimEnd?.invoke(clipTrimLiveEnd); onSeekTo?.invoke(clipTrimLiveEnd) }
+                    Gesture.OVERLAY_TRIM_START, Gesture.OVERLAY_TRIM_END, Gesture.OVERLAY_MOVE ->
+                        commitOverlayDrag(event.x)
+                    Gesture.PLAYHEAD, Gesture.SEEK -> if (tapped) handleTap(event.x, event.y)
+                    else -> if (tapped) handleTap(event.x, event.y)
                 }
-                dragging = false
-                dragMode = DragMode.NONE
-                overlayDrag = null
-                scrubGesture = false
+                resetGesture()
             }
+            MotionEvent.ACTION_CANCEL -> resetGesture()
         }
         return true
     }
 
-    private fun detectTrim(x: Float, y: Float): DragMode {
-        val selectedId = project.selectedClipId ?: return DragMode.NONE
-        // only the video track row (top ~20% of height)
-        if (y > height * 0.22f) return DragMode.NONE
-        val clip = project.clips.firstOrNull { it.id == selectedId } ?: return DragMode.NONE
-        val x0 = controller.timeToX(clip.destStartMs)
-        val x1 = controller.timeToX(clip.destEndMs)
-        if (abs(x - x0) <= trimSlopPx) return DragMode.TRIM_START
-        if (abs(x - x1) <= trimSlopPx) return DragMode.TRIM_END
-        return DragMode.NONE
+    /** Seeks the player/preview to a trim edge so the frame updates live. */
+    private fun seekToClipEdge(edgeMs: Long) {
+        controller.currentMs = edgeMs.coerceIn(0L, controller.totalMs)
+        onSeekTo?.invoke(edgeMs.coerceIn(0L, controller.totalMs))
+        invalidate()
+    }
+
+    private fun resetGesture() {
+        gesture = Gesture.NONE
+        overlayDrag = null
+        clipTrimId = null
     }
 
     private fun handleTap(x: Float, y: Float) {
@@ -627,8 +783,8 @@ class TimelineView @JvmOverloads constructor(
         lastTapX = x
 
         val t = controller.xToTime(x, width.toFloat())
-        // video track row (top 20%) selects the clip under the tap
-        if (y < height * 0.22f) {
+        val row = rowAt(y)
+        if (row == 0) {
             val clip = project.clips.firstOrNull { t in it.destStartMs until it.destEndMs }
             if (clip != null) {
                 onSelectClip?.invoke(clip.id)
@@ -638,9 +794,6 @@ class TimelineView @JvmOverloads constructor(
                 return
             }
         }
-        // overlay (2) / text (3) tracks select the topmost bar under the tap
-        val trackH = (height - 16f) / tracks.size
-        val row = ((y - 8f) / trackH).toInt()
         if (row == 2 || row == 3) {
             val item = overlayAt(t, row)
             if (item != null) {

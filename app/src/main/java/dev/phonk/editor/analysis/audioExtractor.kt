@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.MediaStore
 import java.nio.ByteBuffer
@@ -35,6 +36,32 @@ object AudioExtractor {
                 if (idx != null && idx >= 0) c.getLong(idx) else 0L
             } else 0L
         } ?: 0L
+    }
+
+    /** Source video pixel dimensions (0,0 when unavailable or not a video). */
+    fun queryVideoSize(resolver: ContentResolver, uri: Uri): Pair<Int, Int> {
+        resolver.query(uri, null, null, null, null)?.use { c ->
+            if (c.moveToFirst()) {
+                val w = c.getColumnIndex(MediaStore.Video.Media.WIDTH)
+                val h = c.getColumnIndex(MediaStore.Video.Media.HEIGHT)
+                val wv = if (w != null && w >= 0) c.getInt(w) else 0
+                val hv = if (h != null && h >= 0) c.getInt(h) else 0
+                if (wv > 0 && hv > 0) return wv to hv
+            }
+        }
+        // Some providers do not index width/height; fall back to a metadata read.
+        return runCatching {
+            val r = MediaMetadataRetriever()
+            try {
+                val fd = resolver.openFileDescriptor(uri, "r") ?: return@runCatching null
+                r.setDataSource(fd.fileDescriptor)
+                val w = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+                val h = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+                w to h
+            } finally {
+                r.release()
+            }
+        }.getOrNull() ?: (0 to 0)
     }
 
     data class DecodedAudio(

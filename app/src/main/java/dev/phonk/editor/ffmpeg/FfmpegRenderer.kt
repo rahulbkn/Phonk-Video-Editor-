@@ -54,10 +54,14 @@ class ProcessFFmpegEngine(private val binaryPath: String) : FFmpegEngine {
             listOf(binaryPath) + args
         }
         android.util.Log.i("FFmpeg", "cmd: " + cmd.joinToString(" ") { "\"$it\"" })
-        val proc = ProcessBuilder(cmd)
+        val pb = ProcessBuilder(cmd)
             .directory(cwd)
             .redirectErrorStream(true)
-            .start()
+        // The bundled ffmpeg is dynamically linked; the Android linker does not
+        // search the executable's directory, so point LD_LIBRARY_PATH at the
+        // sibling .so files the bundler extracted next to the binary.
+        cwd?.let { pb.environment()["LD_LIBRARY_PATH"] = it.absolutePath }
+        val proc = pb.start()
         var exit = -1
         try {
             val reader = proc.inputStream.bufferedReader()
@@ -123,6 +127,8 @@ class FfmpegRenderer(private val engine: FFmpegEngine) : RenderCancellable {
         transitionDurationMs: Long = 400L,
         keyframes: List<GradeKeyframe> = emptyList(),
         keyframesEnabled: Boolean = false,
+        sourceWidth: Int = 0,
+        sourceHeight: Int = 0,
     ): RenderState = withContext(Dispatchers.IO) {
         if (!engine.available) {
             RenderState.Failed(
@@ -135,6 +141,7 @@ class FfmpegRenderer(private val engine: FFmpegEngine) : RenderCancellable {
             val args = FFmpegCommandBuilder.buildClip(
                 input, output, segments, config, hasAudio, effects, hwEncode,
                 colorGrade, overlayRenders, transitionDurationMs, keyframes, keyframesEnabled,
+                sourceWidth, sourceHeight,
             )
             cancelFlag.set(false)
             engine.run(args, cancelFlag) { seconds ->

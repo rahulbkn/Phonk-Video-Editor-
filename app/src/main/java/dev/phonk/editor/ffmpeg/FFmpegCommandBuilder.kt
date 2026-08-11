@@ -109,6 +109,8 @@ object FFmpegCommandBuilder {
         transitionDurationMs: Long = 400L,
         keyframes: List<GradeKeyframe> = emptyList(),
         keyframesEnabled: Boolean = false,
+        sourceWidth: Int = 0,
+        sourceHeight: Int = 0,
     ): List<String> {
         if (segments.isEmpty()) {
             return listOf("-y", "-f", "lavfi", "-i", "color=c=black:s=16x16:d=0.1",
@@ -131,7 +133,7 @@ object FFmpegCommandBuilder {
             args.add(r.file)
         }
         args.add("-filter_complex")
-        args.add(buildFilterGraph(segments, config, hasAudio, effects, colorGrade, orderedRenders, transitionDurationMs, keyframes, keyframesEnabled))
+        args.add(buildFilterGraph(segments, config, hasAudio, effects, colorGrade, orderedRenders, transitionDurationMs, keyframes, keyframesEnabled, sourceWidth, sourceHeight))
         args.add("-map")
         args.add("[outv]")
         if (hasAudio) {
@@ -175,6 +177,8 @@ object FFmpegCommandBuilder {
         transitionDurationMs: Long = 400L,
         keyframes: List<GradeKeyframe> = emptyList(),
         keyframesEnabled: Boolean = false,
+        sourceWidth: Int = 0,
+        sourceHeight: Int = 0,
     ): String {
         val sb = StringBuilder()
         val w = config.resolution.width
@@ -216,17 +220,21 @@ object FFmpegCommandBuilder {
         sb.append("[base]scale=").append(w).append(':').append(h)
             .append(":force_original_aspect_ratio=decrease,pad=").append(w).append(':').append(h)
             .append(":(ow-iw)/2:(oh-ih)/2,setsar=1,fps=").append(config.fps.fps)
+            // Force software frames before grade/effect/overlay filters: with
+            // mediacodec hwaccel the decoded stream is hardware-backed and the
+            // `overlay` (and several other) filters reject hw frames.
+            .append(",format=yuv420p")
         val windows = gradeWindows(colorGrade, keyframes, keyframesEnabled, segments)
         windows.forEach { win ->
             val enable = if (windowsUseEnable(win, segments)) "between(t,${fmt(win.startSec)},${fmt(win.endSec)})" else null
             appendColorGrade(sb, win.grade, enable)
         }
-        for (fx in effects) appendEffect(sb, fx, w, h)
-        appendClipEffects(sb, segments)
+        for (fx in effects) appendEffect(sb, fx, w, h, config.fps.fps)
+        appendClipEffects(sb, segments, config.fps.fps, w, h)
         appendTransitions(sb, segments, transitionDurationMs)
         val ordered = orderedOverlays(overlayRenders)
         val totalMs = segments.maxOfOrNull { it.destEndMs } ?: 0L
-        appendOverlayGraphs(sb, ordered, w, h, totalMs)
+        appendOverlayGraphs(sb, ordered, w, h, totalMs, sourceWidth, sourceHeight)
         return sb.toString()
     }
 
@@ -387,7 +395,7 @@ object FFmpegCommandBuilder {
 
     /** Per-clip effects attached to a timeline segment (from the Effects panel).
      *  Each is windowed to the segment's destination time range. */
-    private fun appendClipEffects(sb: StringBuilder, segments: List<ClipSegment>) {
+    private fun appendClipEffects(sb: StringBuilder, segments: List<ClipSegment>, fps: Int, w: Int, h: Int) {
         for (seg in segments) {
             val kind = seg.effect
             if (kind == EffectKind.NONE) continue
@@ -418,13 +426,26 @@ object FFmpegCommandBuilder {
                 }
                 EffectKind.ZOOM -> {
                     val zoom = (amt * 0.3f).coerceAtLeast(0.05f)
-                    sb.append(",zoompan=z='1+").append(fmt(zoom.toDouble())).append("*sin(on*PI/3.5)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:fps=30:enable='between(t,")
-                        .append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+                    val sF = (t0 * fps).roundToInt() + 1
+                    val eF = (t1 * fps).roundToInt().coerceAtLeast(sF + 1)
+                    sb.append(",zoompan=z='if(between(on,").append(sF).append(",").append(eF)
+                        .append("),1+").append(fmt(zoom.toDouble()))
+                        .append("*sin((on-").append(sF).append(")*PI/3.5),1)'")
+                        // zoompan defaults its output size to the SOURCE frame
+                        // dims, ignoring its input — pin it to the canvas size so
+                        // the zoom does not shrink the letterboxed frame back to
+                        // source size.
+                        .append(":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:fps=30:s=")
+                        .append(w).append('x').append(h)
                 }
                 EffectKind.SHAKE -> {
                     val amp = (amt * 20f).coerceAtLeast(2f)
-                    sb.append(",crop=iw:ih:x=").append(fmt(amp.toDouble())).append("*sin(on*2):y=").append(fmt(amp.toDouble())).append("*cos(on*2.5):enable='between(t,")
-                        .append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+                    val sF = (t0 * fps).roundToInt()
+                    val eF = (t1 * fps).roundToInt().coerceAtLeast(sF + 1)
+                    sb.append(",crop=iw:ih:x='if(between(n,").append(sF).append(",").append(eF)
+                        .append("),").append(fmt(amp.toDouble())).append("*sin(n*2),0)'")
+                        .append(":y='if(between(n,").append(sF).append(",").append(eF)
+                        .append("),").append(fmt(amp.toDouble())).append("*cos(n*2.5),0)'")
                 }
                 else -> Unit
             }
@@ -450,7 +471,20 @@ object FFmpegCommandBuilder {
      * then composited at the normalized centre minus half the rotated bbox.
      * With no composites the base stream is labelled [outv] directly.
      */
-    private fun appendOverlayGraphs(sb: StringBuilder, renders: List<OverlayRender>, w: Int, h: Int, totalMs: Long) {
+    private fun appendOverlayGraphs(sb: StringBuilder, renders: List<OverlayRender>, w: Int, h: Int, totalMs: Long, sourceWidth: Int = 0, sourceHeight: Int = 0) {
+        // The base video is scaled into the w×h canvas with aspect preserved and
+        // letterboxed ([base]scale=..:force_original_aspect_ratio=decrease,pad=..).
+        // Overlay coordinates are RELATIVE TO THE VIDEO CONTENT rect, matching
+        // the editor preview, so a source whose aspect differs from the canvas
+        // places overlays on the actual video pixels — never the letterbox bars.
+        val sw = sourceWidth.toFloat()
+        val sh = sourceHeight.toFloat()
+        val hasDims = sw > 0f && sh > 0f
+        val scale = if (hasDims) minOf(w / sw, h / sh) else 1f
+        val vw = sw * scale
+        val vh = sh * scale
+        val vx = (w - vw) / 2.0
+        val vy = (h - vh) / 2.0
         val composites = ArrayList<Pair<Int, OverlayWindow>>()
         renders.forEachIndexed { k, render ->
             overlayWindows(render, totalMs).forEach { composites += k to it }
@@ -459,17 +493,22 @@ object FFmpegCommandBuilder {
             sb.append("[outv]")
             return
         }
-        sb.append("[p0]")
-        var prev = "p0"
+        // Label the base/scale/grade/effect chain (which buildFilterGraph left
+        // with an anonymous tail). Overlays composite onto [styled] so the
+        // letterboxed video rect and any color grade are applied UNDER each
+        // overlay, matching the preview. `[styled]` has a single consumer, so
+        // the base chain is no longer orphaned/dropped.
+        sb.append("[styled]")
+        var prev = "styled"
         composites.forEachIndexed { idx, (k, win) ->
             val render = renders[k]
             val next = if (idx == composites.lastIndex) "outv" else "p${idx + 1}"
-            val sw = render.baseW * win.fx.scaleX
-            val sh = render.baseH * win.fx.scaleY
+            val sw2 = render.baseW * win.fx.scaleX
+            val sh2 = render.baseH * win.fx.scaleY
             sb.append(";[${k + 1}:v]format=rgba,scale=").append(render.baseW).append(':').append(render.baseH)
                 .append(":force_original_aspect_ratio=decrease,pad=").append(render.baseW).append(':').append(render.baseH)
                 .append(":(ow-iw)/2:(oh-ih)/2:color=black@0,scale=")
-                .append(sw.roundToInt().coerceAtLeast(1)).append(':').append(sh.roundToInt().coerceAtLeast(1))
+                .append(sw2.roundToInt().coerceAtLeast(1)).append(':').append(sh2.roundToInt().coerceAtLeast(1))
             val rot = win.fx.rotation
             if (abs(rot) > 0.01f) {
                 sb.append(",rotate=").append(fmt(Math.toRadians(rot.toDouble()))).append(":c=black@0")
@@ -479,16 +518,19 @@ object FFmpegCommandBuilder {
                 sb.append(",colorchannelmixer=aa=").append(fmt(op.toDouble()))
             }
             sb.append("[q").append(idx).append("]")
-            // Position the centre at (fx.x * W, fx.y * H); offset the
-            // top-left by half the ROTATED bounding box.
+            // Position the centre at (vx + fx.x * vw, vy + fx.y * vh), i.e.
+            // inside the letterboxed video rect; offset the top-left by half
+            // the ROTATED bounding box. ffmpeg treats every `[label]` run after
+            // a filter as that filter's output labels, so the composite must
+            // start a NEW subgraph (`;`) before the input labels.
             val rad = Math.toRadians(rot.toDouble())
             val c = abs(cos(rad))
             val s = abs(sin(rad))
-            val bw = sw * c + sh * s
-            val bh = sw * s + sh * c
-            val ox = (win.fx.x * w - bw / 2.0).roundToInt()
-            val oy = (win.fx.y * h - bh / 2.0).roundToInt()
-            sb.append("[").append(prev).append("][q").append(idx).append("]overlay=x=").append(ox)
+            val bw = sw2 * c + sh2 * s
+            val bh = sw2 * s + sh2 * c
+            val ox = (vx + win.fx.x * vw - bw / 2.0).roundToInt()
+            val oy = (vy + win.fx.y * vh - bh / 2.0).roundToInt()
+            sb.append(";[").append(prev).append("][q").append(idx).append("]overlay=x=").append(ox)
                 .append(":y=").append(oy).append(":eof_action=repeat:enable='between(t,")
                 .append(fmt(win.startSec)).append(",").append(fmt(win.endSec)).append(")'[")
                 .append(next).append("]")
@@ -496,7 +538,7 @@ object FFmpegCommandBuilder {
         }
     }
 
-    private fun appendEffect(sb: StringBuilder, e: EffectSpec, w: Int, h: Int) {
+    private fun appendEffect(sb: StringBuilder, e: EffectSpec, w: Int, h: Int, fps: Int) {
         val t0 = e.atDestMs / 1000.0
         val t1 = (e.atDestMs + e.durationMs) / 1000.0
         when (e.kind) {
@@ -505,14 +547,31 @@ object FFmpegCommandBuilder {
                     .append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
             }
             EffectKind.ZOOM -> {
+                // zoompan does not support the `enable` timeline option in this
+                // ffmpeg build, so gate the zoom via the output frame counter
+                // `on` inside the z expression instead.
                 val zoom = (e.amount * 0.3f).coerceAtLeast(0.05f)
-                sb.append(",zoompan=z='1+").append(fmt(zoom.toDouble())).append("*sin(on*PI/3.5)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:fps=30:enable='between(t,")
-                    .append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+                val sF = (t0 * fps).roundToInt() + 1
+                val eF = (t1 * fps).roundToInt().coerceAtLeast(sF + 1)
+                sb.append(",zoompan=z='if(between(on,").append(sF).append(",").append(eF)
+                    .append("),1+").append(fmt(zoom.toDouble()))
+                    .append("*sin((on-").append(sF).append(")*PI/3.5),1)'")
+                    // zoompan defaults its output size to the SOURCE frame dims,
+                    // ignoring its input — pin it to the canvas size so the zoom
+                    // does not shrink the letterboxed frame back to source size.
+                    .append(":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:fps=30:s=")
+                    .append(w).append('x').append(h)
             }
             EffectKind.SHAKE -> {
+                // crop does not support `enable` either (and `on` is not a
+                // valid crop expression variable), so gate with `n` directly.
                 val amp = (e.amount * 20f).coerceAtLeast(2f)
-                sb.append(",crop=iw:ih:x=").append(fmt(amp.toDouble())).append("*sin(on*2):y=").append(fmt(amp.toDouble())).append("*cos(on*2.5):enable='between(t,")
-                    .append(fmt(t0)).append(",").append(fmt(t1)).append(")'")
+                val sF = (t0 * fps).roundToInt()
+                val eF = (t1 * fps).roundToInt().coerceAtLeast(sF + 1)
+                sb.append(",crop=iw:ih:x='if(between(n,").append(sF).append(",").append(eF)
+                    .append("),").append(fmt(amp.toDouble())).append("*sin(n*2),0)'")
+                    .append(":y='if(between(n,").append(sF).append(",").append(eF)
+                    .append("),").append(fmt(amp.toDouble())).append("*cos(n*2.5),0)'")
             }
             EffectKind.BRIGHTNESS -> {
                 val amt = (e.amount * 0.5).coerceAtLeast(0.05)

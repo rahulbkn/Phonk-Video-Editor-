@@ -93,6 +93,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 private const val TWO_PI = 2.0 * kotlin.math.PI
@@ -565,6 +566,31 @@ private fun BoxScope.ProjectOverlays(
     if (project == null) return
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val ld = LocalDensity.current
+        val boxW = with(ld) { maxWidth.toPx() }
+        val boxH = with(ld) { maxHeight.toPx() }
+
+        // Overlays live inside the VIDEO content rectangle (the player shows
+        // the source letterboxed when its aspect differs from the canvas).
+        // Compute the centered rect from the source dimensions; fall back to
+        // the whole canvas when the dims are unknown.
+        val sw = project.videoWidth.toFloat()
+        val sh = project.videoHeight.toFloat()
+        val hasDims = sw > 0f && sh > 0f
+        val scale = if (hasDims) minOf(boxW / sw, boxH / sh) else 1f
+        val vw = sw * scale
+        val vh = sh * scale
+        val vx = (boxW - vw) / 2f
+        val vy = (boxH - vh) / 2f
+
+        // Everything below (text, images, transform layer) is measured against
+        // the video rect so positions and font/image sizes match the actual
+        // video pixels — identical to the export's letterboxed overlay math.
+        Box(
+            Modifier
+                .offset { IntOffset(vx.roundToInt(), vy.roundToInt()) }
+                .size(with(ld) { vw.toDp() }, with(ld) { vh.toDp() }),
+        ) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
         val wPx = with(ld) { maxWidth.toPx() }
         val hPx = with(ld) { maxHeight.toPx() }
         val refW = 1080f
@@ -703,7 +729,9 @@ private fun BoxScope.ProjectOverlays(
         // aspect box) so it is never clipped by aspect-ratio overflow; this log
         // stays here because it knows the true canvas rectangle.
         if (debug) {
-            android.util.Log.d("EDPRV", "canvas ${wPx.toInt()}x${hPx.toInt()} d=$destMs texts=${activeTexts.size} imgs=${activeOverlays.size} totalTexts=${project.textLayers.size} totalOvs=${project.overlays.size}")
+            android.util.Log.d("EDPRV", "canvas ${wPx.toInt()}x${hPx.toInt()} (video rect ${vw.toInt()}x${vh.toInt()} @ $vx,$vy) d=$destMs texts=${activeTexts.size} imgs=${activeOverlays.size} totalTexts=${project.textLayers.size} totalOvs=${project.overlays.size}")
+        }
+            }
         }
     }
 }

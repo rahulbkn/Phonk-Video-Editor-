@@ -14,6 +14,10 @@ data class PhonkProject(
     val videoUri: String? = null,
     val audioUri: String? = null,
     val videoDurationMs: Long = 0,
+    /** Source video pixel dimensions (used to place overlays on the actual
+     *  video content rectangle when the project aspect differs). 0 = unknown. */
+    val videoWidth: Int = 0,
+    val videoHeight: Int = 0,
     val audioDurationMs: Long = 0,
     val bpm: Double = 0.0,
     val beats: List<BeatMarker> = emptyList(),
@@ -270,6 +274,8 @@ class ProjectCodec {
         o.put("videoUri", p.videoUri)
         o.put("audioUri", p.audioUri)
         o.put("videoDurationMs", p.videoDurationMs)
+        o.put("videoWidth", p.videoWidth)
+        o.put("videoHeight", p.videoHeight)
         o.put("audioDurationMs", p.audioDurationMs)
         o.put("bpm", p.bpm)
         o.put("beats", JSONArray().also { arr -> p.beats.forEach { b ->
@@ -423,6 +429,8 @@ class ProjectCodec {
             videoUri = o.optString("videoUri", null),
             audioUri = o.optString("audioUri", null),
             videoDurationMs = o.optLong("videoDurationMs", 0L),
+            videoWidth = o.optInt("videoWidth", 0),
+            videoHeight = o.optInt("videoHeight", 0),
             audioDurationMs = o.optLong("audioDurationMs", 0L),
             bpm = o.optDouble("bpm", 0.0),
             beats = beats,

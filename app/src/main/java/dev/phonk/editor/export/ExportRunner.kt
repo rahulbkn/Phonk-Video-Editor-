@@ -12,6 +12,7 @@ import dev.phonk.editor.editor.CutPlanner
 import dev.phonk.editor.editor.EffectScheduler
 import dev.phonk.editor.ffmpeg.EffectSpec
 import dev.phonk.editor.ffmpeg.FFmpegEngine
+import dev.phonk.editor.ffmpeg.FfmpegBundler
 import dev.phonk.editor.ffmpeg.FfmpegRenderer
 import dev.phonk.editor.ffmpeg.OverlayRender
 import dev.phonk.editor.ffmpeg.ProcessFFmpegEngine
@@ -183,6 +184,8 @@ class ExportRunner(
                         transitionDurationMs = project.transitionDurationMs,
                         keyframes = project.gradeKeyframes,
                         keyframesEnabled = project.gradeKeyframesEnabled,
+                        sourceWidth = project.videoWidth,
+                        sourceHeight = project.videoHeight,
                     )
                     if (cancelRequested) {
                         outFile.delete()
@@ -241,12 +244,20 @@ class ExportRunner(
         val w = config.resolution.width
         val h = config.resolution.height
         val refW = 1080
-        val minSide = minOf(w, h)
+        // Base sizing targets the letterboxed VIDEO content rect (matching the
+        // preview overlay canvas), not the full output frame.
+        val sw = project.videoWidth
+        val sh = project.videoHeight
+        val hasDims = sw > 0 && sh > 0
+        val scale = if (hasDims) minOf(w.toFloat() / sw, h.toFloat() / sh) else 1f
+        val vw = (sw * scale).roundToInt().coerceAtLeast(2)
+        val vh = (sh * scale).roundToInt().coerceAtLeast(2)
+        val minSide = minOf(vw, vh)
         val imageFiles = copyOverlayFiles(context, project)
         val out = ArrayList<OverlayRender>()
         for (t in project.textLayers) {
             if (!t.visible || t.endMs <= t.startMs) continue
-            val raster = rasterizeText(t, w, refW) ?: continue
+            val raster = rasterizeText(t, vw, refW) ?: continue
             out += OverlayRender(
                 id = t.id, file = raster.path, baseW = raster.width, baseH = raster.height,
                 startMs = t.startMs, endMs = t.endMs,
@@ -395,6 +406,7 @@ class ExportRunner(
     }
 
     private fun ffmpegEngine(): FFmpegEngine {
+        FfmpegBundler.ensureExtracted(context)
         val candidate = File(context.filesDir, "ffmpeg/ffmpeg")
         if (candidate.exists()) return ProcessFFmpegEngine(candidate.absolutePath)
         // also check Termux-friendly locations

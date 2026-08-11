@@ -201,7 +201,7 @@ class EditorViewModel(
     }
 
     /** Imports a video URI and (re)builds a single full-length clip. */
-    fun importVideo(uri: Uri, name: String, durationMs: Long) {
+    fun importVideo(uri: Uri, name: String, durationMs: Long, videoWidth: Int = 0, videoHeight: Int = 0) {
         val p = _project.value ?: return
         val dur = if (durationMs > 0) durationMs else p.videoDurationMs
         val clip = ClipSegment(
@@ -214,6 +214,8 @@ class EditorViewModel(
             name = name.ifBlank { p.name },
             videoUri = uri.toString(),
             videoDurationMs = dur,
+            videoWidth = videoWidth,
+            videoHeight = videoHeight,
             clips = listOf(clip),
             selectedClipId = clip.id,
             updatedAt = System.currentTimeMillis(),

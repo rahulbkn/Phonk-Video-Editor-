@@ -22,6 +22,9 @@ class TimelineController(
     var viewportMs: Long = 30_000L
         private set
 
+    /** Reference window treated as "100%" for the zoom readout. */
+    private val baseViewportMs = 30_000L
+
     var viewportWidthPx: Float = 1f
         private set
 
@@ -74,6 +77,15 @@ class TimelineController(
 
     fun visibleRange(): LongRange =
         viewportStartMs..(viewportStartMs + viewportMs).coerceAtMost(totalMs)
+
+    /** Zooms in/out around the visible window's centre. [factor] > 1 zooms in. */
+    fun zoomBy(factor: Float) {
+        zoom(factor, viewportWidthPx / 2f, viewportWidthPx)
+    }
+
+    /** Zoom readout relative to the 30s base window (50%..200% range when sane). */
+    val zoomPercent: Int
+        get() = if (viewportMs <= 0L) 100 else (baseViewportMs.toDouble() / viewportMs * 100.0).toInt().coerceIn(25, 400)
 
     /** Total playback duration in ms across the whole project. */
     fun projectDurationMs(): Long = totalMs.coerceAtLeast(project().clips
