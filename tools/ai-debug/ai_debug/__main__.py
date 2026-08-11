@@ -50,6 +50,13 @@ def _cmd_health(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_stop(args: argparse.Namespace) -> int:
+    from . import proc
+    report = proc.stop_worker(Path(args.data_dir), grace=args.grace)
+    print(json.dumps({k: v for k, v in report.items() if k != "root"}, indent=2))
+    return 0 if report.get("status") in ("ok", "not_running", "already_dead") else 1
+
+
 def _cmd_webhook(args: argparse.Namespace) -> int:
     from .webhook_server import run_server
     run_server(port=args.port, host=args.host)
@@ -80,6 +87,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_health.add_argument("--config", default=None)
     p_health.add_argument("--data-dir", default="./.ai-debug-data")
     p_health.set_defaults(func=_cmd_health)
+
+    p_stop = sub.add_parser("stop", help="stop the polling worker and its process tree")
+    p_stop.add_argument("--data-dir", default="./.ai-debug-data")
+    p_stop.add_argument("--grace", type=float, default=10.0)
+    p_stop.set_defaults(func=_cmd_stop)
 
     p_wh = sub.add_parser("webhook", help="run Flask webhook receiver")
     p_wh.add_argument("--host", default="0.0.0.0")

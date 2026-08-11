@@ -15,10 +15,13 @@ Jobs are persisted via JobStore so a worker restart resumes active jobs.
 
 from __future__ import annotations
 
+import atexit
 import hashlib
 import hmac
 import json
 import os
+import signal
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -26,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from . import github as gh
+from . import proc
 from .config import Config, env, env_bool, load_config
 from .health import HealthRegistry
 from .job import Job, JobStore, QUEUED
@@ -179,6 +183,35 @@ def run_poller_forever(
     max_workers: int = 2,
 ) -> None:
     gh.require_gh()
+    data_dir = Path(env("AI_DEBUG_DATA_DIR", "./.ai-debug-data"))
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    # Own session/process group so the whole worker tree can be torn down by
+    # pgid later; also enforces a single running worker via the pidfile lock.
+    proc.become_session_leader()
+    existing = proc.ensure_single_worker(data_dir)
+    if existing is not None:
+        print(f"[JOB] worker already running (pid {existing}) — refusing to start a second one",
+              flush=True)
+        return
+
+    pidfile = data_dir / proc.WORKER_PIDFILE
+    proc.write_pidfile(pidfile, os.getpid(), proc.pgid(os.getpid()))
+    print(f"[JOB] pidfile {pidfile} written (pid {os.getpid()})", flush=True)
+
+    def _release() -> None:
+        proc.clear_pidfile(pidfile)
+
+    atexit.register(_release)
+
+    def _on_term(_signum: int, _frame: Any) -> None:
+        print("[JOB] received SIGTERM — shutting down cleanly", flush=True)
+        _release()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _on_term)
+    signal.signal(signal.SIGINT, _on_term)
+
     cfg, store = default_worker_paths()
     worker = Worker(cfg, store, max_workers=max_workers)
     print(f"[JOB] poller started for {repo} every {interval_seconds}s", flush=True)
