@@ -46,8 +46,12 @@ jobs:
 
       - name: Install NDK + CMake (needed for externalNativeBuild)
         run: |
-          sdkmanager "ndk;27.1.12297006" "cmake;4.4.2" >/dev/null 2>&1 || \
-            sdkmanager "ndk;27.1.12297006" >/dev/null
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "ndk;27.1.12297006" "cmake;4.4.2"
+          if [ ! -d "$ANDROID_HOME/cmake/4.4.2" ]; then
+            echo "::error::CMake 4.4.2 missing after sdkmanager install"
+            exit 1
+          fi
 
       - name: Strip Termux-only gradle.properties overrides for CI
         run: |
@@ -88,14 +92,16 @@ jobs:
         continue-on-error: true
 
       - name: Build debug APK
+        if: steps.firebase-check.outputs.has_firebase == 'true'
         run: ./gradlew assembleDebug
 
       - name: Build debug androidTest APK (if instrumentation exists)
-        if: steps.detect.outputs.has_instrumentation == 'true'
+        if: steps.firebase-check.outputs.has_firebase == 'true' && steps.detect.outputs.has_instrumentation == 'true'
         run: ./gradlew assembleDebugAndroidTest
 
       - name: Locate debug APK
         id: locate-apk
+        if: steps.firebase-check.outputs.has_firebase == 'true'
         run: |
           APK=$(find . -path "*/build/outputs/apk/debug/*.apk" -not -name "*androidTest*" | head -n 1)
           if [ -z "$APK" ]; then
@@ -107,12 +113,13 @@ jobs:
 
       - name: Locate test APK
         id: locate-test-apk
-        if: steps.detect.outputs.has_instrumentation == 'true'
+        if: steps.firebase-check.outputs.has_firebase == 'true' && steps.detect.outputs.has_instrumentation == 'true'
         run: |
           TEST_APK=$(find . -path "*/build/outputs/apk/androidTest/debug/*.apk" | head -n 1)
           echo "test_apk_path=$TEST_APK" >> "$GITHUB_OUTPUT"
 
       - name: Upload debug APK
+        if: steps.firebase-check.outputs.has_firebase == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: debug-apk
@@ -120,7 +127,7 @@ jobs:
           retention-days: 14
 
       - name: Upload test APK
-        if: steps.detect.outputs.has_instrumentation == 'true'
+        if: steps.firebase-check.outputs.has_firebase == 'true' && steps.detect.outputs.has_instrumentation == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: debug-androidTest-apk
