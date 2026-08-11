@@ -18,5 +18,5 @@ class E2EGateTest {
 }
 
 object E2EGate {
-    fun compute(): Int = 5
+    fun compute(): Int = 4
 }
