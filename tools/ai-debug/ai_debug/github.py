@@ -137,6 +137,7 @@ def latest_failed_run_for_branch(repo: str, branch: str, workflow: str | None = 
     except GitHubError:
         return None
     runs = data.get("workflow_runs", [])
+    runs = [r for r in runs if r.get("conclusion") == "failure"]
     if not runs:
         return None
     run = runs[0]
@@ -162,6 +163,8 @@ def recent_failed_runs(repo: str, workflow: str | None = None,
         return []
     runs = []
     for run in data.get("workflow_runs", []):
+        if run.get("conclusion") != "failure":
+            continue
         branch = run.get("head_branch", "")
         if branch_prefix and not branch.startswith(branch_prefix):
             continue
