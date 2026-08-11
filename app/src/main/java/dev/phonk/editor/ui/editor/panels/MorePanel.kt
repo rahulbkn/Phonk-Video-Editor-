@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import dev.phonk.editor.R
 import dev.phonk.editor.editor.CutPattern
 import dev.phonk.editor.model.EffectKind
+import dev.phonk.editor.ui.components.EditorChip
 import dev.phonk.editor.ui.components.PhonkButton
 import dev.phonk.editor.ui.components.PhonkSlider
 import dev.phonk.editor.ui.components.SectionHeader
@@ -120,16 +121,7 @@ fun MorePanel(
                 Pair(stringResource(R.string.speed_hyper), SpeedPreset.HYPER),
             )
             presets.forEach { (label, preset) ->
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(scheme.surfaceVariant.copy(alpha = 0.7f))
-                        .clickable { onPreset(preset) }
-                        .padding(horizontal = 14.dp, vertical = 9.dp),
-                ) {
-                    Text(label, fontSize = 11.sp, color = scheme.onSurface)
-                }
+                EditorChip(label, onClick = { onPreset(preset) })
             }
         }
         Spacer(Modifier.height(6.dp))
@@ -180,20 +172,7 @@ fun MorePanel(
                 Pair(stringResource(R.string.beat_preset_4), 4.0),
                 Pair(stringResource(R.string.beat_preset_8), 8.0),
             ).forEach { (label, sub) ->
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(scheme.surfaceVariant.copy(alpha = 0.7f))
-                        .clickable(enabled = bpm > 0) { onSubdivision(sub) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    Text(
-                        label,
-                        fontSize = 11.sp,
-                        color = if (bpm > 0) scheme.onSurface else scheme.onSurfaceVariant,
-                    )
-                }
+                EditorChip(label, onClick = { onSubdivision(sub) }, enabled = bpm > 0)
             }
         }
         Spacer(Modifier.height(6.dp))

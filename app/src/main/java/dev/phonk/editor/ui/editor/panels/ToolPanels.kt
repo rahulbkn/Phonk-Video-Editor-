@@ -39,6 +39,8 @@ import dev.phonk.editor.model.ColorGrade
 import dev.phonk.editor.model.EffectKind
 import dev.phonk.editor.model.GradeParam
 import dev.phonk.editor.model.TextLayer
+import dev.phonk.editor.ui.components.EditorChip
+import dev.phonk.editor.ui.components.EditorTokens
 import dev.phonk.editor.ui.components.PhonkButton
 import dev.phonk.editor.ui.components.PhonkSlider
 import dev.phonk.editor.ui.components.SectionHeader
@@ -102,18 +104,10 @@ private fun EffectCategory(title: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun EffectChip(labelRes: Int, kind: EffectKind, onAdd: (EffectKind) -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(scheme.surfaceVariant.copy(alpha = 0.7f))
-            .border(1.dp, scheme.outline.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-            .clickable { onAdd(kind) }
-            .padding(horizontal = 14.dp, vertical = 9.dp),
-    ) {
-        Text(stringResource(labelRes), fontSize = 11.sp, color = scheme.onSurface)
-    }
+    EditorChip(
+        label = stringResource(labelRes),
+        onClick = { onAdd(kind) },
+    )
 }
 
 @Composable
@@ -360,16 +354,7 @@ fun SpeedPanel(
                 Pair(stringResource(R.string.speed_hyper), SpeedPreset.HYPER),
             )
             presets.forEach { (label, preset) ->
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(scheme.surfaceVariant.copy(alpha = 0.7f))
-                        .clickable { onPreset(preset) }
-                        .padding(horizontal = 14.dp, vertical = 9.dp),
-                ) {
-                    Text(label, fontSize = 11.sp, color = scheme.onSurface)
-                }
+                EditorChip(label, onClick = { onPreset(preset) })
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -413,32 +398,14 @@ fun BeatPanel(
                 Pair(stringResource(R.string.beat_preset_4), 4.0),
                 Pair(stringResource(R.string.beat_preset_8), 8.0),
             ).forEach { (label, sub) ->
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(scheme.surfaceVariant.copy(alpha = 0.7f))
-                        .clickable(enabled = bpm > 0) { onSubdivision(sub) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    Text(label, fontSize = 11.sp, color = if (bpm > 0) scheme.onSurface else scheme.onSurfaceVariant)
-                }
+                EditorChip(label, onClick = { onSubdivision(sub) }, enabled = bpm > 0)
             }
         }
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.beat_cut_patterns), fontSize = 10.sp, color = scheme.onSurfaceVariant)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             CutPattern.entries.forEach { cp ->
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(scheme.surfaceVariant.copy(alpha = 0.7f))
-                        .clickable(enabled = bpm > 0) { onPattern(cp) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    Text(stringResource(cp.labelRes), fontSize = 11.sp, color = if (bpm > 0) scheme.onSurface else scheme.onSurfaceVariant)
-                }
+                EditorChip(stringResource(cp.labelRes), onClick = { onPattern(cp) }, enabled = bpm > 0)
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -526,17 +493,12 @@ fun MediaPanel(
 
 @Composable
 private fun MediaTile(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier
-            .height(40.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xFF17171F))
-            .border(1.dp, Color(0xFF292934), RoundedCornerShape(6.dp))
-            .clickable { onClick() },
-    ) {
-        Text(label, fontSize = 10.sp, fontWeight = FontWeight.Medium, color = Color(0xFFC9C9D2))
-    }
+    EditorChip(
+        label = label,
+        onClick = onClick,
+        modifier = modifier,
+        height = EditorTokens.PrimaryHeight,
+    )
 }
 
 @Composable

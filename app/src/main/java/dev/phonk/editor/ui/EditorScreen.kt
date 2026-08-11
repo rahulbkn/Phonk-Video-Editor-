@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Fullscreen
@@ -73,11 +74,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -113,9 +112,12 @@ import dev.phonk.editor.model.TextLayer
 import dev.phonk.editor.project.ProjectStore
 import dev.phonk.editor.timeline.TimelineController
 import dev.phonk.editor.timeline.TimelineView
+import dev.phonk.editor.ui.components.EditorChip
+import dev.phonk.editor.ui.components.EditorIconButton
+import dev.phonk.editor.ui.components.EditorTokens
+import dev.phonk.editor.ui.components.EditorToolButton
 import dev.phonk.editor.ui.components.PhonkButton
 import dev.phonk.editor.ui.components.PhonkProgressBar
-import dev.phonk.editor.ui.components.PhonkSeekBar
 import dev.phonk.editor.ui.components.PhonkSlider
 import dev.phonk.editor.ui.components.SectionHeader
 import dev.phonk.editor.ui.editor.EditorPreview
@@ -279,12 +281,14 @@ fun EditorScreen(projectId: String, onBack: () -> Unit) {
     var editOverlayId by remember { mutableStateOf<String?>(null) }
     var selectedAspect by remember { mutableStateOf("9:16") }
     var fullscreen by remember { mutableStateOf(false) }
+    var zoomTick by remember { mutableStateOf(0) }
 
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching { appCtx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             val dur = runCatching { dev.phonk.editor.analysis.AudioExtractor.queryDuration(appCtx.contentResolver, uri) }.getOrDefault(0L)
-            vm.importVideo(uri, queryName(appCtx.contentResolver, uri), dur)
+            val (vw, vh) = runCatching { dev.phonk.editor.analysis.AudioExtractor.queryVideoSize(appCtx.contentResolver, uri) }.getOrDefault(0 to 0)
+            vm.importVideo(uri, queryName(appCtx.contentResolver, uri), dur, vw, vh)
         }
     }
     val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -343,14 +347,29 @@ fun EditorScreen(projectId: String, onBack: () -> Unit) {
                 // ─── Top Bar ─────────────────────────────────────────────────
                 TopBar(onBack = onBack, p = p, totalDur = totalDur, canUndo = canUndo, canRedo = canRedo, onUndo = { vm.undo() }, onRedo = { vm.redo() }, onExport = { vm.resetExport(); showExport = true })
 
+                // ─── Aspect / Canvas Toolbar ─────────────────────────────────
+                AspectToolbar(selectedAspect = selectedAspect, onAspectSelected = { selectedAspect = it })
+
                 // ─── Preview ─────────────────────────────────────────────────
                 PreviewSection(vm, p, isPlaying, playhead, selectedOverlayId, selectedAspect, fullscreen, onToggleFullscreen = { fullscreen = !fullscreen }, onEditText = { editOverlayId = it })
 
-                // ─── Player Controls ─────────────────────────────────────────
+                // ─── Compact Player Controls ─────────────────────────────────
                 PlayerControls(playhead = playhead, totalDur = totalDur, isPlaying = isPlaying, onSeekBack = { vm.setCurrentPosition((playhead - 5000).coerceAtLeast(0)) }, onPlayPause = { vm.playPause() }, onSeekForward = { vm.setCurrentPosition((playhead + 5000).coerceAtMost(totalDur)) }, fullscreen = fullscreen, onToggleFullscreen = { fullscreen = !fullscreen })
 
+                // ─── Timeline Toolbar ────────────────────────────────────────
+                TimelineToolbar(
+                    vm = vm,
+                    playhead = playhead,
+                    zoomPercent = controller.zoomPercent,
+                    onSplit = { vm.splitAt(playhead) },
+                    onKeyframe = { vm.addGradeKeyframe(playhead) },
+                    onMarker = { vm.addDropAt(playhead) },
+                    onZoomIn = { controller.zoomBy(1.4f); zoomTick++ },
+                    onZoomOut = { controller.zoomBy(1f / 1.4f); zoomTick++ },
+                )
+
                 // ─── Timeline ────────────────────────────────────────────────
-                TimelineSection(vm = vm, controller = controller, p = p, playhead = playhead, selectedOverlayId = selectedOverlayId, modifier = Modifier.weight(1f))
+                TimelineSection(vm = vm, controller = controller, p = p, playhead = playhead, selectedOverlayId = selectedOverlayId, zoomTick = zoomTick, modifier = Modifier.weight(1f))
 
                 // ─── Status Bar ──────────────────────────────────────────────
                 StatusBar(selectedAspect = selectedAspect, p = p)
@@ -515,58 +534,26 @@ private fun ContextualToolbar(
     ) {
         Row(
             Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(0.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             tools.forEach { tool ->
-                val active = selectedTool == tool.id
-                val bgAlpha by animateFloatAsState(if (active) 0.2f else 0f, animationSpec = tween(200), label = "ctxBg")
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .width(56.dp)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (active) Color(0xFFA855F7).copy(alpha = bgAlpha) else Color.Transparent)
-                        .clickable { onToolSelected(tool) }
-                        .padding(vertical = 2.dp),
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(1.dp),
-                    ) {
-                        Icon(
-                            tool.icon,
-                            tool.label,
-                            tint = if (active) Color(0xFFA855F7) else Color(0xFF8F8F9D),
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Text(
-                            tool.label,
-                            fontSize = 9.sp,
-                            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                            color = if (active) Color(0xFFA855F7) else Color(0xFF8F8F9D),
-                            maxLines = 1,
-                        )
-                    }
-                }
+                EditorToolButton(
+                    label = tool.label,
+                    active = selectedTool == tool.id,
+                    onClick = { onToolSelected(tool) },
+                    icon = tool.icon,
+                    activeColor = Color(0xFFA855F7),
+                )
             }
         }
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF17171F))
-                .clickable { onBack() },
-        ) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                "Close sub-toolbar",
-                tint = Color(0xFF8F8F9D),
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        EditorIconButton(
+            icon = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = "Close sub-toolbar",
+            onClick = onBack,
+            background = Color(0xFF17171F),
+            tint = Color(0xFF8F8F9D),
+        )
     }
 }
 
@@ -593,20 +580,21 @@ private fun ToolPanel(
     ) {
         // Header
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+            Modifier.fillMaxWidth().padding(horizontal = EditorTokens.Space16, vertical = EditorTokens.Space4),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 toolId.replace("_", " ").replaceFirstChar { it.uppercase() },
-                fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFFF5F5F7),
+                fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFFF5F5F7),
                 modifier = Modifier.weight(1f),
             )
-            IconButton(
+            EditorIconButton(
+                icon = Icons.Filled.Close,
+                contentDescription = "Close",
                 onClick = onClose,
-                modifier = Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF17171F)),
-            ) {
-                Text("×", fontSize = 12.sp, color = Color(0xFFF7F7FB))
-            }
+                background = Color(0xFF17171F),
+                tint = Color(0xFFF7F7FB),
+            )
         }
 
         // Content
@@ -653,18 +641,9 @@ private fun VolumePanelInline(volume: Float, muted: Boolean, onVolume: (Float) -
 private fun FadeInPanelInline(fadeInMs: Long, onFadeIn: (Long) -> Unit) {
     Column {
         SectionHeader("Fade In")
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8)) {
             listOf(0L to "0ms", 250L to "250ms", 500L to "500ms", 1000L to "1000ms").forEach { (ms, label) ->
-                val sel = fadeInMs == ms
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                        .background(if (sel) Color(0xFFA855F7).copy(alpha = 0.25f) else Color(0xFF17171F))
-                        .clickable { onFadeIn(ms) }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                ) {
-                    Text(label, fontSize = 10.sp, color = if (sel) Color(0xFFA855F7) else Color(0xFFF7F7FB))
-                }
+                EditorChip(label, onClick = { onFadeIn(ms) }, selected = fadeInMs == ms)
             }
         }
     }
@@ -674,18 +653,9 @@ private fun FadeInPanelInline(fadeInMs: Long, onFadeIn: (Long) -> Unit) {
 private fun FadeOutPanelInline(fadeOutMs: Long, onFadeOut: (Long) -> Unit) {
     Column {
         SectionHeader("Fade Out")
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8)) {
             listOf(0L to "0ms", 250L to "250ms", 500L to "500ms", 1000L to "1000ms").forEach { (ms, label) ->
-                val sel = fadeOutMs == ms
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                        .background(if (sel) Color(0xFFA855F7).copy(alpha = 0.25f) else Color(0xFF17171F))
-                        .clickable { onFadeOut(ms) }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                ) {
-                    Text(label, fontSize = 10.sp, color = if (sel) Color(0xFFA855F7) else Color(0xFFF7F7FB))
-                }
+                EditorChip(label, onClick = { onFadeOut(ms) }, selected = fadeOutMs == ms)
             }
         }
     }
@@ -709,26 +679,18 @@ private fun BeatInlinePanel(bpm: Double, onDetect: () -> Unit, onSubdivision: (D
         if (bpm > 0) {
             Text("BPM: %.1f".format(bpm), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFFA855F7))
         } else {
-            PhonkButton("Detect Beats", onClick = onDetect, primary = true, modifier = Modifier.padding(vertical = 4.dp))
-            Text("Detect beats first to enable auto-cut", fontSize = 10.sp, color = Color(0xFF8F8F9D), modifier = Modifier.padding(vertical = 2.dp))
+            PhonkButton("Detect Beats", onClick = onDetect, primary = true, modifier = Modifier.padding(vertical = EditorTokens.Space4))
+            Text("Detect beats first to enable auto-cut", fontSize = EditorTokens.FontLabel, color = Color(0xFF8F8F9D), modifier = Modifier.padding(vertical = 2.dp))
         }
-        Spacer(Modifier.height(4.dp))
-        Text("Auto Cut", fontSize = 10.sp, color = Color(0xFF8F8F9D))
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Spacer(Modifier.height(EditorTokens.Space4))
+        Text("Auto Cut", fontSize = EditorTokens.FontLabel, color = Color(0xFF8F8F9D))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8)) {
             listOf(0.25 to "1/4", 0.5 to "1/2", 1.0 to "1", 2.0 to "2", 4.0 to "4", 8.0 to "8").forEach { (sub, label) ->
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF17171F))
-                        .clickable(enabled = bpm > 0) { onSubdivision(sub) }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                ) {
-                    Text(label, fontSize = 10.sp, color = if (bpm > 0) Color(0xFFF7F7FB) else Color(0xFF8F8F9D))
-                }
+                EditorChip(label, onClick = { onSubdivision(sub) }, enabled = bpm > 0)
             }
         }
-        Spacer(Modifier.height(6.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Spacer(Modifier.height(EditorTokens.Space8))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8)) {
             PhonkButton("Add Drop ($dropCount)", onClick = onAddDrop, modifier = Modifier.weight(1f))
             PhonkButton("Remove Drop", onClick = onRemoveDrop, modifier = Modifier.weight(1f))
         }
@@ -758,21 +720,24 @@ private fun ColorPanelInline(layer: TextLayer?, onColor: (String, Long) -> Unit)
     Column {
         SectionHeader("Text Color")
         if (id != null) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8)) {
                 listOf(
                     0xFFFFFFFFL to "White", 0xFF000000L to "Black", 0xFFA855F7L to "Purple",
                     0xFFFF6B6BL to "Red", 0xFF39D7B1L to "Teal", 0xFFFB923CL to "Orange",
                     0xFF3B82F6L to "Blue", 0xFF22C55EL to "Green",
                 ).forEach { (color, label) ->
                     val sel = currentColor == color
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onColor(id, color) }.padding(4.dp)) {
-                        Box(Modifier.size(28.dp).clip(CircleShape).background(Color(color.toInt())).border(1.5.dp, if (sel) Color(0xFFA855F7) else Color(0xFF292934), CircleShape))
-                        Text(label, fontSize = 8.sp, color = if (sel) Color(0xFFA855F7) else Color(0xFF8F8F9D))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier
+                        .clip(RoundedCornerShape(EditorTokens.CornerButton))
+                        .clickable { onColor(id, color) }
+                        .padding(EditorTokens.Space4)) {
+                        Box(Modifier.size(32.dp).clip(CircleShape).background(Color(color.toInt())).border(1.5.dp, if (sel) Color(0xFFA855F7) else Color(0xFF292934), CircleShape))
+                        Text(label, fontSize = EditorTokens.FontLabel, color = if (sel) Color(0xFFA855F7) else Color(0xFF8F8F9D))
                     }
                 }
             }
         } else {
-            Text("Select a text layer first", fontSize = 10.sp, color = Color(0xFF8F8F9D))
+            Text("Select a text layer first", fontSize = EditorTokens.FontLabel, color = Color(0xFF8F8F9D))
         }
     }
 }
@@ -783,22 +748,13 @@ private fun TextAnimationPanelInline(layer: TextLayer?, onAnimation: (String, St
     Column {
         SectionHeader("Text Animation")
         if (id != null) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8)) {
                 listOf("Fade", "Slide", "Zoom", "Typewriter", "Bounce", "Glitch").forEach { anim ->
-                    val sel = layer?.animation == anim
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                            .background(if (sel) Color(0xFFA855F7).copy(alpha = 0.25f) else Color(0xFF17171F))
-                            .clickable { onAnimation(id, anim) }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                    ) {
-                        Text(anim, fontSize = 10.sp, color = if (sel) Color(0xFFA855F7) else Color(0xFFF7F7FB))
-                    }
+                    EditorChip(anim, onClick = { onAnimation(id, anim) }, selected = layer?.animation == anim)
                 }
             }
         } else {
-            Text("Select a text layer first", fontSize = 10.sp, color = Color(0xFF8F8F9D))
+            Text("Select a text layer first", fontSize = EditorTokens.FontLabel, color = Color(0xFF8F8F9D))
         }
     }
 }
@@ -845,7 +801,7 @@ private fun GradeSlidersInline(grade: dev.phonk.editor.model.ColorGrade, onGrade
 private fun SpeedPanelInline(speed: Float, onSpeed: (Float) -> Unit, onPreset: (SpeedPreset) -> Unit) {
     Column {
         SectionHeader("Speed")
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8)) {
             listOf(
                 "Normal" to SpeedPreset.NORMAL, "Slow" to SpeedPreset.SLOW, "Fast" to SpeedPreset.FAST,
                 "Beat Drop" to SpeedPreset.BEAT_DROP, "Hyper" to SpeedPreset.HYPER,
@@ -857,21 +813,13 @@ private fun SpeedPanelInline(speed: Float, onSpeed: (Float) -> Unit, onPreset: (
                     SpeedPreset.BEAT_DROP -> speed == 0.75f
                     SpeedPreset.HYPER -> speed == 2f
                 }
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                        .background(if (sel) Color(0xFFA855F7).copy(alpha = 0.25f) else Color(0xFF17171F))
-                        .clickable { onPreset(preset) }
-                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                ) {
-                    Text(label, fontSize = 10.sp, color = if (sel) Color(0xFFA855F7) else Color(0xFFF7F7FB))
-                }
+                EditorChip(label, onClick = { onPreset(preset) }, selected = sel)
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(EditorTokens.Space8))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             PhonkSlider(value = speed, onValueChange = onSpeed, valueRange = 0.25f..4f, modifier = Modifier.weight(1f))
-            Text("%.2fx".format(speed), fontSize = 11.sp, color = Color(0xFF8F8F9D), modifier = Modifier.width(40.dp))
+            Text("%.2fx".format(speed), fontSize = EditorTokens.FontCompact, color = Color(0xFF8F8F9D), modifier = Modifier.width(40.dp))
         }
     }
 }
@@ -922,22 +870,36 @@ private fun TopBar(onBack: () -> Unit, p: PhonkProject?, totalDur: Long, canUndo
     Row(Modifier.fillMaxWidth().height(52.dp).background(Color(0xFF0B0B10))
         .border(0.5.dp, Color(0xFF282833)).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color(0xFFF5F5F7), modifier = Modifier.size(18.dp))
-        }
+        EditorIconButton(
+            icon = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = "Back",
+            onClick = onBack,
+            background = Color.Transparent,
+        )
         Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
             Text(p?.name ?: "Editor", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFFF5F5F7), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("1080×1920 · ${p?.export?.fps?.fps ?: 30}fps · ${formatClock(totalDur)}", fontSize = 10.sp, color = Color(0xFF8F8F9D), maxLines = 1)
         }
-        IconButton(onClick = onUndo, enabled = canUndo, modifier = Modifier.size(40.dp)) {
-            Icon(Icons.Filled.Undo, "Undo", tint = if (canUndo) Color(0xFFF5F5F7) else Color(0xFF8F8F9D).copy(alpha = 0.3f), modifier = Modifier.size(15.dp))
-        }
-        IconButton(onClick = onRedo, enabled = canRedo, modifier = Modifier.size(40.dp)) {
-            Icon(Icons.Filled.Redo, "Redo", tint = if (canRedo) Color(0xFFF5F5F7) else Color(0xFF8F8F9D).copy(alpha = 0.3f), modifier = Modifier.size(15.dp))
-        }
+        EditorIconButton(
+            icon = Icons.Filled.Undo,
+            contentDescription = "Undo",
+            onClick = onUndo,
+            enabled = canUndo,
+            background = Color.Transparent,
+            tint = Color(0xFFF5F5F7),
+        )
+        EditorIconButton(
+            icon = Icons.Filled.Redo,
+            contentDescription = "Redo",
+            onClick = onRedo,
+            enabled = canRedo,
+            background = Color.Transparent,
+            tint = Color(0xFFF5F5F7),
+        )
         Button(onClick = onExport, colors = ButtonDefaults.buttonColors(Color(0xFFA855F7), Color.White),
-            shape = RoundedCornerShape(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 8.dp)) {
-            Text("Export", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            shape = RoundedCornerShape(EditorTokens.CornerButton),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+            Text("Export", fontWeight = FontWeight.Bold, fontSize = EditorTokens.FontTool)
         }
     }
 }
@@ -970,36 +932,129 @@ private fun PreviewSection(vm: EditorViewModel, p: PhonkProject?, isPlaying: Boo
 
 @Composable
 private fun PlayerControls(playhead: Long, totalDur: Long, isPlaying: Boolean, onSeekBack: () -> Unit, onPlayPause: () -> Unit, onSeekForward: () -> Unit, fullscreen: Boolean, onToggleFullscreen: () -> Unit) {
-    Row(Modifier.fillMaxWidth().height(48.dp).background(Color(0xFF0B0B10))
+    Row(Modifier.fillMaxWidth().height(44.dp).background(Color(0xFF0B0B10))
         .border(0.5.dp, Color(0xFF282833)).padding(horizontal = 6.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        IconButton(onClick = onSeekBack, modifier = Modifier.size(36.dp)) {
-            Icon(Icons.Filled.SkipPrevious, "Prev", tint = Color(0xFFB8B8C4), modifier = Modifier.size(15.dp))
-        }
-        IconButton(onClick = onPlayPause, modifier = Modifier.size(38.dp)) {
-            Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (isPlaying) "Pause" else "Play", tint = Color(0xFFA855F7), modifier = Modifier.size(20.dp))
-        }
-        IconButton(onClick = onSeekForward, modifier = Modifier.size(36.dp)) {
-            Icon(Icons.Filled.SkipNext, "Next", tint = Color(0xFFB8B8C4), modifier = Modifier.size(15.dp))
-        }
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(formatClock(playhead), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFA855F7))
-            PhonkSeekBar(
-                progress = if (totalDur > 0) playhead.toFloat() / totalDur.toFloat() else 0f,
-                onSeek = { /* handled by timeline */ },
-                activeColor = Color(0xFFA855F7),
-                modifier = Modifier.weight(1f),
-            )
-            Text(formatClock(totalDur), fontSize = 11.sp, color = Color(0xFF8F8F9D))
-        }
-        IconButton(onClick = onToggleFullscreen, modifier = Modifier.size(36.dp)) {
-            Icon(Icons.Filled.Fullscreen, "Fullscreen", tint = if (fullscreen) Color(0xFFA855F7) else Color(0xFFB8B8C4), modifier = Modifier.size(15.dp))
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        EditorIconButton(
+            icon = Icons.Filled.SkipPrevious,
+            contentDescription = "Prev",
+            onClick = onSeekBack,
+            target = EditorTokens.ToolTarget,
+            background = Color.Transparent,
+            tint = Color(0xFFB8B8C4),
+        )
+        EditorIconButton(
+            icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+            contentDescription = if (isPlaying) "Pause" else "Play",
+            onClick = onPlayPause,
+            target = EditorTokens.ToolTarget,
+            background = Color.Transparent,
+            tint = Color(0xFFA855F7),
+        )
+        EditorIconButton(
+            icon = Icons.Filled.SkipNext,
+            contentDescription = "Next",
+            onClick = onSeekForward,
+            target = EditorTokens.ToolTarget,
+            background = Color.Transparent,
+            tint = Color(0xFFB8B8C4),
+        )
+        Spacer(Modifier.weight(1f))
+        Text(formatClock(playhead), fontSize = EditorTokens.FontTool, fontWeight = FontWeight.Bold, color = Color(0xFFA855F7))
+        Text(" / ", fontSize = EditorTokens.FontTool, color = Color(0xFF8F8F9D))
+        Text(formatClock(totalDur), fontSize = EditorTokens.FontTool, color = Color(0xFF8F8F9D))
+        Spacer(Modifier.weight(1f))
+        EditorIconButton(
+            icon = Icons.Filled.Fullscreen,
+            contentDescription = "Fullscreen",
+            onClick = onToggleFullscreen,
+            target = EditorTokens.ToolTarget,
+            background = Color.Transparent,
+            tint = if (fullscreen) Color(0xFFA855F7) else Color(0xFFB8B8C4),
+        )
+    }
+}
+
+@Composable
+private fun AspectToolbar(selectedAspect: String, onAspectSelected: (String) -> Unit) {
+    val aspects = listOf("1:1", "4:5", "9:16", "16:9", "2.35:1")
+    Row(
+        Modifier.fillMaxWidth().height(40.dp).background(Color(0xFF0B0B10))
+            .border(0.5.dp, Color(0xFF282833)).padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("Aspect", fontSize = 10.sp, color = Color(0xFF8F8F9D), modifier = Modifier.weight(1f))
+        aspects.forEach { label ->
+            val sel = selectedAspect == label
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (sel) Color(0xFFA855F7).copy(alpha = 0.22f) else Color(0xFF17171F))
+                    .clickable { onAspectSelected(label) }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text(label, fontSize = 10.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
+                    color = if (sel) Color(0xFFA855F7) else Color(0xFFC9C9D2))
+            }
         }
     }
 }
 
 @Composable
-private fun TimelineSection(vm: EditorViewModel, controller: TimelineController, p: PhonkProject?, playhead: Long, selectedOverlayId: String?, modifier: Modifier = Modifier) {
+private fun TimelineToolbar(
+    vm: EditorViewModel,
+    playhead: Long,
+    zoomPercent: Int,
+    onSplit: () -> Unit,
+    onKeyframe: () -> Unit,
+    onMarker: () -> Unit,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().height(44.dp).background(Color(0xFF0B0B10))
+            .border(0.5.dp, Color(0xFF282833)).padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        TimelineToolButton(Icons.Filled.ContentCut, "Split", onSplit)
+        TimelineToolButton(Icons.Filled.Tune, "Keyframe", onKeyframe)
+        TimelineToolButton(Icons.Filled.MusicNote, "Marker", onMarker)
+        Spacer(Modifier.weight(1f))
+        ZoomIconButton("−", "Zoom out", onZoomOut)
+        Text("$zoomPercent%", fontSize = EditorTokens.FontLabel, color = Color(0xFFC9C9D2), modifier = Modifier.padding(horizontal = 4.dp))
+        TimelineToolButton(Icons.Filled.Add, "Zoom in", onZoomIn)
+    }
+}
+
+@Composable
+private fun TimelineToolButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    EditorToolButton(
+        label = label,
+        active = false,
+        onClick = onClick,
+        icon = icon,
+    )
+}
+
+@Composable
+private fun ZoomIconButton(glyph: String, label: String, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(EditorTokens.CompactTarget)
+            .clip(RoundedCornerShape(EditorTokens.CornerButton))
+            .background(Color(0xFF17171F))
+            .clickable { onClick() },
+    ) {
+        Text(glyph, fontSize = EditorTokens.FontTool, color = Color(0xFFC9C9D2))
+    }
+}
+
+@Composable
+private fun TimelineSection(vm: EditorViewModel, controller: TimelineController, p: PhonkProject?, playhead: Long, selectedOverlayId: String?, zoomTick: Int, modifier: Modifier = Modifier) {
     AndroidView(
         factory = { ctx ->
             TimelineView(ctx).also { tv ->
@@ -1014,7 +1069,9 @@ private fun TimelineSection(vm: EditorViewModel, controller: TimelineController,
             val pr = vm.project.value ?: PhonkProject()
             tv.project = pr; tv.selectedOverlayId = selectedOverlayId
             tv.controller.totalMs = pr.timelineDurationMs().takeIf { it > 0 } ?: pr.videoDurationMs
-            tv.controller.currentMs = playhead.coerceIn(0L, tv.controller.totalMs); tv.refresh()
+            tv.controller.currentMs = playhead.coerceIn(0L, tv.controller.totalMs)
+            tv.refresh()
+            if (zoomTick > 0) tv.refresh()
         },
         modifier = modifier.fillMaxWidth().heightIn(min = 100.dp),
     )
@@ -1041,41 +1098,45 @@ private fun ExportOverlay(showExport: Boolean, onClose: () -> Unit, exportState:
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(onClick = onClose)) {
         Surface(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars),
             shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp), color = Color(0xFF121219), shadowElevation = 12.dp) {
-            Column(Modifier.fillMaxWidth().padding(12.dp).verticalScroll(rememberScrollState())) {
+            Column(Modifier.fillMaxWidth().padding(EditorTokens.Space12).verticalScroll(rememberScrollState())) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Export", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFFF7F7FB), modifier = Modifier.weight(1f))
-                    IconButton(onClick = onClose, modifier = Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)).background(Color(0xFF17171F))) {
-                        Text("×", fontSize = 12.sp, color = Color(0xFFF7F7FB))
-                    }
+                    Text("Export", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFFF7F7FB), modifier = Modifier.weight(1f))
+                    EditorIconButton(
+                        icon = Icons.Filled.Close,
+                        contentDescription = "Close",
+                        onClick = onClose,
+                        background = Color(0xFF17171F),
+                        tint = Color(0xFFF7F7FB),
+                    )
                 }
-                Spacer(Modifier.height(10.dp))
-                Text("${p?.export?.resolution ?: "1080p"} · ${p?.export?.fps?.fps ?: 30} FPS", fontSize = 11.sp, color = Color(0xFF8F8F9D))
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(EditorTokens.Space8))
+                Text("${p?.export?.resolution ?: "1080p"} · ${p?.export?.fps?.fps ?: 30} FPS", fontSize = EditorTokens.FontCompact, color = Color(0xFF8F8F9D))
+                Spacer(Modifier.height(EditorTokens.Space8))
                 when (val es = exportState) {
                     is ExportState.Running -> {
                         PhonkProgressBar(progress = es.progress, activeColor = Color(0xFFA855F7), modifier = Modifier.fillMaxWidth())
-                        Spacer(Modifier.height(4.dp)); Text("${(es.progress * 100).toInt()}%", fontSize = 10.sp, color = Color(0xFF8F909D))
-                        Spacer(Modifier.height(4.dp))
-                        Button(onClick = onCancel, colors = ButtonDefaults.buttonColors(Color(0xFF17171F)), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        Spacer(Modifier.height(EditorTokens.Space4)); Text("${(es.progress * 100).toInt()}%", fontSize = EditorTokens.FontLabel, color = Color(0xFF8F909D))
+                        Spacer(Modifier.height(EditorTokens.Space4))
+                        Button(onClick = onCancel, colors = ButtonDefaults.buttonColors(Color(0xFF17171F)), shape = RoundedCornerShape(EditorTokens.CornerButton), modifier = Modifier.fillMaxWidth().height(EditorTokens.PrimaryHeight)) {
                             Text("Cancel", color = Color(0xFFF7F7FB))
                         }
                     }
                     is ExportState.Done -> {
-                        Text("Done!", fontSize = 12.sp, color = Color(0xFF39D7B1)); Spacer(Modifier.height(4.dp))
-                        Button(onClick = onClose, colors = ButtonDefaults.buttonColors(Color(0xFFA855F7)), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        Text("Done!", fontSize = EditorTokens.FontTool, color = Color(0xFF39D7B1)); Spacer(Modifier.height(EditorTokens.Space4))
+                        Button(onClick = onClose, colors = ButtonDefaults.buttonColors(Color(0xFFA855F7)), shape = RoundedCornerShape(EditorTokens.CornerButton), modifier = Modifier.fillMaxWidth().height(EditorTokens.PrimaryHeight)) {
                             Text("OK", color = Color.White)
                         }
                     }
                     is ExportState.Failed -> {
-                        Text(es.message, fontSize = 10.sp, color = Color(0xFFFF6B6B)); Spacer(Modifier.height(4.dp))
-                        Button(onClick = onExport, colors = ButtonDefaults.buttonColors(Color(0xFFA855F7)), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                        Text(es.message, fontSize = EditorTokens.FontLabel, color = Color(0xFFFF6B6B)); Spacer(Modifier.height(EditorTokens.Space4))
+                        Button(onClick = onExport, colors = ButtonDefaults.buttonColors(Color(0xFFA855F7)), shape = RoundedCornerShape(EditorTokens.CornerButton), modifier = Modifier.fillMaxWidth().height(EditorTokens.PrimaryHeight)) {
                             Text("Retry", color = Color.White)
                         }
                     }
                     ExportState.Idle -> {
                         Button(onClick = onExport, colors = ButtonDefaults.buttonColors(Color(0xFFA855F7), Color.White),
-                            shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().height(40.dp)) {
-                            Text("Start Export", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            shape = RoundedCornerShape(EditorTokens.CornerButton), modifier = Modifier.fillMaxWidth().height(EditorTokens.PrimaryHeight)) {
+                            Text("Start Export", fontWeight = FontWeight.Bold, fontSize = EditorTokens.FontTool)
                         }
                     }
                 }

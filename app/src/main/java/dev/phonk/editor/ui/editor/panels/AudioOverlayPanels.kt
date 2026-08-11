@@ -36,6 +36,7 @@ import dev.phonk.editor.R
 import dev.phonk.editor.model.OverlayItem
 import dev.phonk.editor.model.OverlayLayer
 import dev.phonk.editor.model.TextLayer
+import dev.phonk.editor.ui.components.EditorChip
 import dev.phonk.editor.ui.components.PhonkButton
 import dev.phonk.editor.ui.components.PhonkSlider
 import dev.phonk.editor.ui.components.SectionHeader
@@ -91,38 +92,17 @@ fun AudioTrackPanel(
 
 @Composable
 private fun FadeChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) scheme.primary.copy(alpha = 0.25f) else scheme.surfaceVariant.copy(alpha = 0.7f))
-            .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 7.dp),
-    ) {
-        Text(
-            label,
-            fontSize = 10.sp,
-            color = if (selected) scheme.primary else scheme.onSurface,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-        )
-    }
+    EditorChip(label, onClick = onClick, selected = selected)
 }
 
 @Composable
 private fun ActionChip(label: String, active: Boolean, onClick: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (active) scheme.error.copy(alpha = 0.25f) else scheme.surfaceVariant.copy(alpha = 0.7f))
-            .border(1.dp, if (active) scheme.error else scheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-    ) {
-        Text(label, fontSize = 11.sp, color = if (active) scheme.error else scheme.onSurface, fontWeight = FontWeight.SemiBold)
-    }
+    EditorChip(
+        label = label,
+        onClick = onClick,
+        selected = active,
+        modifier = Modifier,
+    )
 }
 
 @Composable

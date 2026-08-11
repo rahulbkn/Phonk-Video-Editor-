@@ -46,6 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 
 val ToolbarHeight = 52.dp
 val TrackHeight = 48.dp
@@ -55,6 +57,43 @@ val BottomToolHeight = 50.dp
 val CornerCard = 16.dp
 val CornerChip = 20.dp
 val CornerPill = 28.dp
+
+// ─── Shared Editor Design Tokens ─────────────────────────────────────────────
+// Central source of truth for control sizes, touch targets, corners, spacing
+// and typography so editor controls are consistent across screens.
+
+object EditorTokens {
+    // Touch targets (accessibility minimums)
+    val IconTarget = 44.dp          // icon-only buttons
+    val ToolTarget = 44.dp          // tool / toolbar buttons
+    val CompactTarget = 40.dp       // secondary compact controls
+    val PrimaryHeight = 48.dp       // primary action buttons
+
+    // Visual icon sizes (visual can be smaller than the touch target)
+    val Icon = 18.dp
+    val IconCompact = 16.dp
+
+    // Corner radii
+    val CornerControl = 8.dp
+    val CornerButton = 10.dp
+    val CornerSheet = 16.dp
+
+    // Spacing scale
+    val Space4 = 4.dp
+    val Space8 = 8.dp
+    val Space12 = 12.dp
+    val Space16 = 16.dp
+    val Space20 = 20.dp
+
+    // Typography
+    val FontPrimary = 14.sp
+    val FontTool = 12.sp
+    val FontCompact = 11.sp
+    val FontLabel = 10.sp
+    val FontDialogTitle = 18.sp
+    val FontDialogBody = 14.sp
+    val FontDialogAction = 13.sp
+}
 
 private val ActiveGlow = 0.85f
 private val IdleAlpha = 0.18f
@@ -136,6 +175,161 @@ fun PhonkIconButton(
             contentDescription = contentDescription,
             tint = tint,
             modifier = Modifier.size(size * 0.5f),
+        )
+    }
+}
+
+/** Shared icon-only button with a consistent 44dp touch target. */
+@Composable
+fun EditorIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+    background: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+    target: Dp = EditorTokens.IconTarget,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(target)
+            .clip(RoundedCornerShape(EditorTokens.CornerButton))
+            .background(if (pressed) background else background.copy(alpha = 0.85f))
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled) { onClick() },
+    ) {
+        androidx.compose.material3.Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = if (enabled) tint else tint.copy(alpha = 0.3f),
+            modifier = Modifier.size(EditorTokens.Icon),
+        )
+    }
+}
+
+/** Shared tool button (icon + label) used in editor toolbars. */
+@Composable
+fun EditorToolButton(
+    label: String,
+    active: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    activeColor: Color = MaterialTheme.colorScheme.primary,
+    height: Dp = EditorTokens.ToolTarget,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+        modifier = modifier
+            .height(height)
+            .clip(RoundedCornerShape(EditorTokens.CornerButton))
+            .background(
+                when {
+                    active -> activeColor.copy(alpha = 0.9f)
+                    pressed -> scheme.surfaceVariant.copy(alpha = 0.5f)
+                    else -> Color.Transparent
+                },
+            )
+            .clickable(interactionSource = interaction, indication = null) { onClick() }
+            .padding(horizontal = 10.dp),
+    ) {
+        if (icon != null) {
+            androidx.compose.material3.Icon(
+                icon,
+                contentDescription = null,
+                tint = if (active) Color.White else scheme.onSurfaceVariant,
+                modifier = Modifier.size(EditorTokens.IconCompact),
+            )
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(
+            label,
+            fontSize = EditorTokens.FontLabel,
+            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+            color = if (active) Color.White else scheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
+
+/** Shared pill selector chip for preset items (speed, fade, beat, colour). */
+@Composable
+fun EditorChip(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    selected: Boolean = false,
+    height: Dp = EditorTokens.CompactTarget,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .height(height)
+            .clip(RoundedCornerShape(EditorTokens.CornerButton))
+            .background(
+                when {
+                    !enabled -> scheme.surfaceVariant.copy(alpha = 0.35f)
+                    selected -> scheme.primary.copy(alpha = 0.25f)
+                    pressed -> scheme.surfaceVariant
+                    else -> scheme.surfaceVariant.copy(alpha = 0.7f)
+                },
+            )
+            .border(
+                1.dp,
+                if (selected) scheme.primary else scheme.outline.copy(alpha = 0.3f),
+                RoundedCornerShape(EditorTokens.CornerButton),
+            )
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled) { onClick() }
+            .padding(horizontal = 12.dp),
+    ) {
+        Text(
+            label,
+            fontSize = EditorTokens.FontCompact,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = when {
+                !enabled -> scheme.onSurfaceVariant
+                selected -> scheme.primary
+                else -> scheme.onSurface
+            },
+            maxLines = 1,
+        )
+    }
+}
+
+/** Bottom-sheet header row with title + close, for consistent sheets/dialogs. */
+@Composable
+fun SheetHeader(
+    title: String,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.fillMaxWidth().padding(horizontal = EditorTokens.Space16, vertical = EditorTokens.Space8),
+    ) {
+        Text(
+            title,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        EditorIconButton(
+            icon = androidx.compose.material.icons.Icons.Filled.Close,
+            contentDescription = "Close",
+            onClick = onClose,
+            background = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
         )
     }
 }

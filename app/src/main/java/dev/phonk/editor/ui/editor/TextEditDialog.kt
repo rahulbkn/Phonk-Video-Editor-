@@ -1,7 +1,5 @@
 package dev.phonk.editor.ui.editor
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -25,14 +22,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.input.TextFieldValue
 import dev.phonk.editor.R
+import dev.phonk.editor.ui.components.EditorChip
 import dev.phonk.editor.ui.components.PhonkButton
 import dev.phonk.editor.ui.components.PhonkSlider
 
@@ -82,16 +77,7 @@ fun TextEditDialog(
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     animations.forEach { a ->
                         val selected = animation == a
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (selected) scheme.primary.copy(alpha = 0.25f) else scheme.surfaceVariant.copy(alpha = 0.7f))
-                                .clickableNoRipple { animation = a }
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                        ) {
-                            Text(a, fontSize = 11.sp, color = if (selected) scheme.primary else scheme.onSurface, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-                        }
+                        EditorChip(a, onClick = { animation = a }, selected = selected)
                     }
                 }
             }
@@ -109,11 +95,4 @@ fun TextEditDialog(
             }
         },
     )
-}
-
-private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier {
-    val interaction = androidx.compose.foundation.interaction.MutableInteractionSource()
-    return this
-        .clip(RoundedCornerShape(8.dp))
-        .clickable(interactionSource = interaction, indication = null) { onClick() }
 }
