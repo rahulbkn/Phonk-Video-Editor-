@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Phonk Editor brand mark: an audio waveform (four bars of increasing
+    height) used inside the purple logo badge. Tintable; the host layer
+    supplies the purple gradient background and glow.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3.5,9h2.4v6H3.5z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.5,4.5h2.4v15H8.5z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M13.5,7h2.4v10H13.5z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M18.5,2.5h2.4v19H18.5z" />
+</vector>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Pro badge crown icon (custom vector asset). Tintable.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3.5,16.5 L2,7 L7.5,10 L12,5 L16.5,10 L22,7 L20.5,16.5 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,18.5 L21,18.5 L21,21 L3,21 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,5 m-1.4,0 a1.4,1.4 0 1,1 2.8,0 a1.4,1.4 0 1,1 -2.8,0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7.5,10 m-1.2,0 a1.2,1.2 0 1,1 2.4,0 a1.2,1.2 0 1,1 -2.4,0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M16.5,10 m-1.2,0 a1.2,1.2 0 1,1 2.4,0 a1.2,1.2 0 1,1 -2.4,0" />
+</vector>

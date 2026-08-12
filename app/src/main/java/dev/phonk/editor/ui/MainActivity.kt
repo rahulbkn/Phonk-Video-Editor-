@@ -6,24 +6,21 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.remember
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.phonk.editor.model.PhonkProject
 import dev.phonk.editor.settings.SettingsManager
-import dev.phonk.editor.ui.components.NavTab
 import dev.phonk.editor.ui.BeatAnalyzerScreen
 import dev.phonk.editor.ui.ProfileScreen
+import dev.phonk.editor.ui.components.NavTab
+import dev.phonk.editor.ui.home.PhonkHomeScreen
+import dev.phonk.editor.ui.home.ProScreen
+import dev.phonk.editor.ui.home.TemplatesScreen
 
 /**
  * Navigation state holder that survives activity recreation (e.g., language change).
@@ -77,6 +74,7 @@ class NavigationViewModel : ViewModel() {
 fun PhonkApp() {
     val navViewModel: NavigationViewModel = viewModel()
     val route = navViewModel.route
+    var openCreateSheet by remember { mutableStateOf(false) }
 
     // System Back button handler: pops the navigation stack instead of closing the app.
     // When at the root screen, disables itself so the system can finish the activity.
@@ -84,39 +82,62 @@ fun PhonkApp() {
         navViewModel.pop()
     }
 
+    fun navigateTab(tab: NavTab) {
+        when (tab) {
+            NavTab.CREATE -> {
+                openCreateSheet = true
+                navViewModel.navigateTo(Route.Home)
+            }
+            NavTab.HOME -> navViewModel.navigateTo(Route.Home)
+            NavTab.TEMPLATES -> navViewModel.navigateTo(Route.Templates)
+            NavTab.PROJECTS -> navViewModel.navigateTo(Route.Projects)
+            NavTab.PROFILE -> navViewModel.navigateTo(Route.Profile)
+        }
+    }
+
     when (route) {
-        Route.Home -> HomeScreen(
+        Route.Home -> PhonkHomeScreen(
             onOpen = { p ->
                 navViewModel.navigateTo(Route.Editor(p.id))
             },
             onOpenSettings = {
                 navViewModel.navigateTo(Route.Settings)
             },
+            onOpenPro = {
+                navViewModel.navigateTo(Route.Pro)
+            },
+            onOpenBeatAnalyzer = {
+                navViewModel.navigateTo(Route.Beats)
+            },
             onNavigate = { tab ->
-                when (tab) {
-                    NavTab.PROJECTS -> navViewModel.navigateTo(Route.Projects)
-                    NavTab.BEATS -> navViewModel.navigateTo(Route.Beats)
-                    NavTab.PROFILE -> navViewModel.navigateTo(Route.Profile)
-                    else -> Unit
+                if (tab == NavTab.CREATE) {
+                    openCreateSheet = true
+                } else {
+                    navigateTab(tab)
                 }
             },
+            openCreateSheet = openCreateSheet,
+            onCreateSheetHandled = { openCreateSheet = false },
+        )
+        Route.Templates -> TemplatesScreen(
+            onBack = { navViewModel.pop() },
+            onOpen = { p -> navViewModel.navigateTo(Route.Editor(p.id)) },
+            onNavigate = { tab -> navigateTab(tab) },
+        )
+        Route.Pro -> ProScreen(
+            onBack = { navViewModel.pop() },
         )
         Route.Projects -> ProjectsScreen(
             onBack = { navViewModel.pop() },
             onOpen = { p -> navViewModel.navigateTo(Route.Editor(p.id)) },
+            onNavigate = { tab -> navigateTab(tab) },
         )
         Route.Beats -> BeatAnalyzerScreen(
             onBack = { navViewModel.pop() },
         )
         Route.Profile -> ProfileScreen(
             onBack = { navViewModel.pop() },
-            onNavigate = { tab ->
-                when (tab) {
-                    NavTab.HOME -> navViewModel.navigateTo(Route.Home)
-                    NavTab.PROJECTS -> navViewModel.navigateTo(Route.Projects)
-                    else -> navViewModel.navigateTo(Route.Home)
-                }
-            },
+            onNavigate = { tab -> navigateTab(tab) },
         )
         is Route.Editor -> EditorScreen(
             projectId = route.projectId,
@@ -125,6 +146,8 @@ fun PhonkApp() {
         Route.Settings -> SettingsScreen(
             onBack = { navViewModel.pop() },
             onOpenDeveloper = { navViewModel.navigateTo(Route.Debug) },
+            onOpenProfile = { navViewModel.navigateTo(Route.Profile) },
+            onManageStorage = { navViewModel.navigateTo(Route.Projects) },
         )
         Route.Debug -> DebugScreen(
             onBack = { navViewModel.pop() },
@@ -132,33 +155,13 @@ fun PhonkApp() {
     }
 }
 
-@Composable
-private fun PlaceholderScreen(
-    title: String,
-    onBack: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-        }
-    }
-}
-
 sealed interface Route {
     data object Home : Route
+    data object Templates : Route
     data object Projects : Route
     data object Beats : Route
     data object Profile : Route
+    data object Pro : Route
     data class Editor(val projectId: String) : Route
     data object Settings : Route
     data object Debug : Route

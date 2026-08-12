@@ -1,6 +1,5 @@
 package dev.phonk.editor.ui
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,7 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
@@ -36,23 +34,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import dev.phonk.editor.BuildConfig
+import dev.phonk.editor.R
 import dev.phonk.editor.project.ProjectStore
 import dev.phonk.editor.settings.SettingsManager
-import dev.phonk.editor.ui.components.BottomNav
 import dev.phonk.editor.ui.components.NavTab
-import dev.phonk.editor.ui.components.PhonkPanel
+import dev.phonk.editor.ui.components.UiDimens
+import dev.phonk.editor.ui.home.BottomNav
 
 @Composable
 fun ProfileScreen(
     onBack: () -> Unit,
     onNavigate: (NavTab) -> Unit = {},
 ) {
-    val context = LocalContext.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val store = remember { ProjectStore(context) }
     val projectCount = remember { store.listRecent().size }
     var showAbout by remember { mutableStateOf(false) }
@@ -73,22 +71,22 @@ fun ProfileScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .padding(horizontal = UiDimens.spaceSm, vertical = UiDimens.spaceSm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = onBack, modifier = Modifier.size(UiDimens.touchTargetIcon)) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = stringResource(R.string.back),
                         tint = scheme.onBackground,
                     )
                 }
                 Text(
-                    "Profile",
-                    fontSize = 20.sp,
+                    stringResource(R.string.profile_title),
+                    fontSize = UiDimens.textSizeXl,
                     fontWeight = FontWeight.Bold,
                     color = scheme.onBackground,
-                    modifier = Modifier.padding(start = 4.dp),
+                    modifier = Modifier.padding(start = UiDimens.spaceXs),
                 )
             }
 
@@ -96,76 +94,76 @@ fun ProfileScreen(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp),
+                    .padding(horizontal = UiDimens.screenPadding),
             ) {
                 // App info card
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(UiDimens.spaceLg))
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(scheme.surface, MaterialTheme.shapes.medium)
-                        .padding(24.dp),
+                        .padding(UiDimens.dialogPadding),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Icon(
                         Icons.Filled.Palette,
                         contentDescription = null,
                         tint = scheme.primary,
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier.size(UiDimens.iconSizeLg * 2),
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(UiDimens.spaceMd))
                     Text(
-                        "Phonk Drop Editor",
-                        fontSize = 18.sp,
+                        stringResource(R.string.profile_app_name),
+                        fontSize = UiDimens.textSizeSectionTitle,
                         fontWeight = FontWeight.Bold,
                         color = scheme.onSurface,
                     )
                     Text(
-                        "v${BuildConfig.VERSION_NAME}",
-                        fontSize = 13.sp,
+                        stringResource(R.string.profile_about_version, BuildConfig.VERSION_NAME),
+                        fontSize = UiDimens.textSizeSm,
                         color = scheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(UiDimens.spaceXs))
                     Text(
-                        "Edit. Sync. Drop.",
-                        fontSize = 12.sp,
+                        stringResource(R.string.profile_tagline),
+                        fontSize = UiDimens.textSizeSm,
                         color = scheme.onSurfaceVariant,
                     )
                 }
 
                 // Stats
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(UiDimens.spaceLg))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(UiDimens.itemSpacing),
                 ) {
                     StatCard(
                         icon = Icons.Filled.Storage,
-                        label = "Projects",
+                        label = stringResource(R.string.profile_stat_projects),
                         value = "$projectCount",
                         modifier = Modifier.weight(1f),
                     )
                     StatCard(
                         icon = Icons.Filled.Timer,
-                        label = "Theme",
+                        label = stringResource(R.string.profile_stat_theme),
                         value = when (SettingsManager.themeMode) {
-                            SettingsManager.THEME_LIGHT -> "Light"
-                            SettingsManager.THEME_DARK -> "Dark"
-                            else -> "System"
+                            SettingsManager.THEME_LIGHT -> stringResource(R.string.profile_theme_light)
+                            SettingsManager.THEME_DARK -> stringResource(R.string.profile_theme_dark)
+                            else -> stringResource(R.string.profile_theme_system)
                         },
                         modifier = Modifier.weight(1f),
                     )
                 }
 
                 // About button
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(UiDimens.spaceLg))
                 TextButton(
                     onClick = { showAbout = true },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Icon(Icons.Filled.Info, contentDescription = null, tint = scheme.primary)
-                    Spacer(Modifier.size(8.dp))
-                    Text("About", color = scheme.primary)
+                    Spacer(Modifier.size(UiDimens.spaceSm))
+                    Text(stringResource(R.string.profile_about_button), color = scheme.primary)
                 }
 
                 Spacer(Modifier.height(80.dp))
@@ -183,24 +181,24 @@ fun ProfileScreen(
     if (showAbout) {
         AlertDialog(
             onDismissRequest = { showAbout = false },
-            title = { Text("About Phonk Drop Editor") },
+            title = { Text(stringResource(R.string.profile_about_title)) },
             text = {
                 Column {
-                    Text("Version: ${BuildConfig.VERSION_NAME}")
-                    Spacer(Modifier.height(8.dp))
-                    Text("A professional mobile video editor for phonk music videos.")
-                    Spacer(Modifier.height(8.dp))
-                    Text("Features:")
-                    Text("• Beat-synced editing")
-                    Text("• Real-time effects")
-                    Text("• Color grading")
-                    Text("• Text & overlay support")
-                    Text("• FFmpeg export")
+                    Text(stringResource(R.string.profile_about_version, BuildConfig.VERSION_NAME))
+                    Spacer(Modifier.height(UiDimens.spaceSm))
+                    Text(stringResource(R.string.profile_about_description))
+                    Spacer(Modifier.height(UiDimens.spaceSm))
+                    Text(stringResource(R.string.profile_about_features))
+                    Text(stringResource(R.string.profile_about_feature_beatsync))
+                    Text(stringResource(R.string.profile_about_feature_effects))
+                    Text(stringResource(R.string.profile_about_feature_color))
+                    Text(stringResource(R.string.profile_about_feature_text))
+                    Text(stringResource(R.string.profile_about_feature_ffmpeg))
                 }
             },
             confirmButton = {
                 TextButton(onClick = { showAbout = false }) {
-                    Text("OK")
+                    Text(stringResource(R.string.ok))
                 }
             },
         )
@@ -218,25 +216,25 @@ private fun StatCard(
     Column(
         modifier = modifier
             .background(scheme.surface, MaterialTheme.shapes.medium)
-            .padding(16.dp),
+            .padding(UiDimens.spaceLg),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
             icon,
             contentDescription = null,
             tint = scheme.primary,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(UiDimens.iconSizeLg),
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(UiDimens.spaceSm))
         Text(
             value,
-            fontSize = 20.sp,
+            fontSize = UiDimens.textSizeXl,
             fontWeight = FontWeight.Bold,
             color = scheme.onSurface,
         )
         Text(
             label,
-            fontSize = 12.sp,
+            fontSize = UiDimens.textSizeSm,
             color = scheme.onSurfaceVariant,
         )
     }

@@ -35,6 +35,19 @@ object SettingsManager {
     // Project
     private const val KEY_AUTOSAVE = "autosave"
 
+    // Application
+    private const val KEY_AUTO_BACKUP = "auto_backup"
+    private const val KEY_PREVIEW_QUALITY = "preview_quality"
+    private const val KEY_LOW_POWER_MODE = "low_power_mode"
+    private const val KEY_NOTIFICATIONS = "notifications"
+    private const val KEY_EXPORT_NOTIFICATIONS = "export_notifications"
+    private const val KEY_FEATURE_NOTIFICATIONS = "feature_notifications"
+
+    const val PREVIEW_QUALITY_AUTO = "Auto"
+    const val PREVIEW_QUALITY_LOW = "Low"
+    const val PREVIEW_QUALITY_MEDIUM = "Medium"
+    const val PREVIEW_QUALITY_HIGH = "High"
+
     const val THEME_SYSTEM = "system"
     const val THEME_LIGHT = "light"
     const val THEME_DARK = "dark"
@@ -94,6 +107,25 @@ object SettingsManager {
     var autosave by mutableStateOf(true)
         private set
 
+    // Application
+    var autoBackup by mutableStateOf(false)
+        private set
+
+    var previewQuality by mutableStateOf(PREVIEW_QUALITY_HIGH)
+        private set
+
+    var lowPowerMode by mutableStateOf(false)
+        private set
+
+    var notificationsEnabled by mutableStateOf(true)
+        private set
+
+    var exportNotifications by mutableStateOf(true)
+        private set
+
+    var featureNotifications by mutableStateOf(true)
+        private set
+
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -111,6 +143,12 @@ object SettingsManager {
         addToGallery = prefs(context).getBoolean(KEY_ADD_TO_GALLERY, true)
         defaultAspect = prefs(context).getString(KEY_DEFAULT_ASPECT, "9:16") ?: "9:16"
         autosave = prefs(context).getBoolean(KEY_AUTOSAVE, true)
+        autoBackup = prefs(context).getBoolean(KEY_AUTO_BACKUP, false)
+        previewQuality = prefs(context).getString(KEY_PREVIEW_QUALITY, PREVIEW_QUALITY_HIGH) ?: PREVIEW_QUALITY_HIGH
+        lowPowerMode = prefs(context).getBoolean(KEY_LOW_POWER_MODE, false)
+        notificationsEnabled = prefs(context).getBoolean(KEY_NOTIFICATIONS, true)
+        exportNotifications = prefs(context).getBoolean(KEY_EXPORT_NOTIFICATIONS, true)
+        featureNotifications = prefs(context).getBoolean(KEY_FEATURE_NOTIFICATIONS, true)
     }
 
     fun setThemeMode(context: Context, mode: String) {
@@ -171,6 +209,36 @@ object SettingsManager {
     fun setAutosave(context: Context, enabled: Boolean) {
         autosave = enabled
         prefs(context).edit().putBoolean(KEY_AUTOSAVE, enabled).apply()
+    }
+
+    fun setAutoBackup(context: Context, enabled: Boolean) {
+        autoBackup = enabled
+        prefs(context).edit().putBoolean(KEY_AUTO_BACKUP, enabled).apply()
+    }
+
+    fun setPreviewQuality(context: Context, quality: String) {
+        previewQuality = quality
+        prefs(context).edit().putString(KEY_PREVIEW_QUALITY, quality).apply()
+    }
+
+    fun setLowPowerMode(context: Context, enabled: Boolean) {
+        lowPowerMode = enabled
+        prefs(context).edit().putBoolean(KEY_LOW_POWER_MODE, enabled).apply()
+    }
+
+    fun setNotifications(context: Context, enabled: Boolean) {
+        notificationsEnabled = enabled
+        prefs(context).edit().putBoolean(KEY_NOTIFICATIONS, enabled).apply()
+    }
+
+    fun setExportNotifications(context: Context, enabled: Boolean) {
+        exportNotifications = enabled
+        prefs(context).edit().putBoolean(KEY_EXPORT_NOTIFICATIONS, enabled).apply()
+    }
+
+    fun setFeatureNotifications(context: Context, enabled: Boolean) {
+        featureNotifications = enabled
+        prefs(context).edit().putBoolean(KEY_FEATURE_NOTIFICATIONS, enabled).apply()
     }
 
     /** Reset all preferences to their default values. */

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Phonk Drop Editor</string>
+    <string name="app_name">Phonk Editor</string>
     <string name="no_strong_drop">No strong drop detected. You can manually add a drop.</string>
 
     <!-- ============================= Main app UI ============================= -->
-    <string name="app_title">Phonk Drop Editor</string>
+    <string name="app_title">Phonk Editor</string>
     <string name="open_video">Open video</string>
     <string name="recent_projects">Recent projects</string>
     <string name="editor_title">Editor</string>
@@ -157,6 +157,7 @@
 
     <!-- Clear cache dialog -->
     <string name="dialog_clear_cache_title">Clear cache?</string>
+    <string name="clear">Clear</string>
     <string name="dialog_clear_cache_message">This removes temporary preview/thumbnails/cache files. Your projects and exported videos will not be deleted.</string>
     <string name="cache_cleared">Cache cleared: %1$s</string>
 
@@ -206,6 +207,117 @@
     <string name="on">On</string>
     <string name="off">Off</string>
     <string name="not_available">Not available</string>
+
+    <!-- ============================= Settings (premium dark redesign) ============================= -->
+
+    <!-- Header -->
+    <string name="settings_profile_title">Phonk Editor User</string>
+    <string name="settings_profile_subtitle">Free Account</string>
+
+    <!-- Pro -->
+    <string name="settings_pro_title_prefix">Unlock Phonk</string>
+    <string name="settings_pro_title_accent">Pro</string>
+    <string name="settings_pro_subtitle">Get premium effects, unlimited exports and more.</string>
+    <string name="settings_pro_badge_premium">Premium Effects</string>
+    <string name="settings_pro_badge_watermark">No Watermark</string>
+    <string name="settings_pro_badge_4k">4K Export</string>
+    <string name="settings_pro_badge_ai">AI Tools</string>
+    <string name="settings_upgrade_pro">Upgrade to Pro</string>
+
+    <!-- Section titles -->
+    <string name="settings_sec_app">App Settings</string>
+    <string name="settings_sec_editor">Editor</string>
+    <string name="settings_sec_performance">Performance</string>
+    <string name="settings_sec_notifications">Notifications</string>
+    <string name="settings_sec_storage">Storage</string>
+    <string name="settings_sec_privacy">Privacy &amp; Security</string>
+    <string name="settings_sec_support">Support</string>
+    <string name="settings_sec_about">About</string>
+
+    <!-- App settings rows -->
+    <string name="settings_language_subtitle">English</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_appearance_subtitle">Dark</string>
+    <string name="settings_auto_save">Auto Save</string>
+    <string name="settings_auto_save_hint">Automatically save project changes</string>
+    <string name="settings_auto_backup">Auto Backup</string>
+    <string name="settings_auto_backup_hint">Back up projects automatically</string>
+
+    <!-- Editor rows -->
+    <string name="settings_export_quality">Default Export Quality</string>
+    <string name="settings_frame_rate">Default Frame Rate</string>
+    <string name="settings_aspect_ratio">Default Aspect Ratio</string>
+
+    <!-- Performance rows -->
+    <string name="settings_low_power_mode">Low Power Mode</string>
+    <string name="settings_low_power_mode_hint">Reduce preview quality to save battery</string>
+    <string name="settings_cache">Cache</string>
+
+    <!-- Notifications rows -->
+    <string name="settings_notifications_hint">Receive app notifications</string>
+    <string name="settings_export_completed">Export Completed</string>
+    <string name="settings_export_completed_hint">Notify when video export finishes</string>
+    <string name="settings_new_features">New Features</string>
+    <string name="settings_new_features_hint">Get updates about new features</string>
+
+    <!-- Storage -->
+    <string name="settings_storage_used">Used</string>
+    <string name="settings_storage_free">Free</string>
+    <string name="settings_manage_storage">Manage Storage</string>
+
+    <!-- Privacy & security -->
+    <string name="settings_privacy_policy">Privacy Policy</string>
+    <string name="settings_terms_of_service">Terms of Service</string>
+    <string name="settings_data_permissions">Data &amp; Permissions</string>
+    <string name="settings_delete_account">Delete Account</string>
+    <string name="dialog_delete_account_title">Delete Account?</string>
+    <string name="dialog_delete_account_message">This will permanently delete all projects, settings and media stored on this device. This action cannot be undone.</string>
+    <string name="account_deleted">Account and data deleted</string>
+    <string name="storage_manage_hint">Projects, cache and exports use space on this device.</string>
+
+    <!-- Support -->
+    <string name="settings_help_center">Help Center</string>
+    <string name="settings_contact_support">Contact Support</string>
+    <string name="settings_report_problem">Report a Problem</string>
+    <string name="settings_rate_phonk">Rate Phonk Editor</string>
+    <string name="settings_no_email_app">No email app found</string>
+    <string name="settings_support_email_subject">Phonk Editor support request</string>
+
+    <!-- About -->
+    <string name="settings_open_source_licenses">Open Source Licenses</string>
+    <string name="settings_website">Website</string>
+    <string name="settings_follow_us">Follow Us</string>
+    <string name="settings_footer_tagline">Edit • Create • Go Viral</string>
+
+    <!-- Preview quality sheet -->
+    <string name="settings_preview_quality_auto_label">Auto</string>
+    <string name="settings_preview_quality_low_label">Low</string>
+    <string name="settings_preview_quality_medium_label">Medium</string>
+    <string name="settings_preview_quality_high_label">High</string>
+
+    <!-- Sheet titles -->
+    <string name="settings_select_language">Select Language</string>
+    <string name="settings_select_appearance">Select Appearance</string>
+    <string name="settings_select_export_quality">Export Quality</string>
+    <string name="settings_select_frame_rate">Frame Rate</string>
+    <string name="settings_select_aspect_ratio">Aspect Ratio</string>
+
+    <!-- Info dialogs -->
+    <string name="settings_privacy_dialog_title">Privacy Policy</string>
+    <string name="settings_privacy_dialog_message">Phonk Editor processes your videos and audio entirely on-device. Media you import stays on this device unless you export or share it. Phonk Editor does not collect, upload or sell your personal data.</string>
+    <string name="settings_terms_dialog_title">Terms of Service</string>
+    <string name="settings_terms_dialog_message">By using Phonk Editor you agree to use the app for lawful purposes only and to respect the rights of others. The app is provided as-is without warranty of any kind.</string>
+    <string name="settings_permissions_dialog_title">Data &amp; Permissions</string>
+    <string name="settings_permissions_dialog_message">Phonk Editor asks to access your media library so you can import videos, audio and photos for editing. Files are processed locally on your device and are never uploaded.</string>
+    <string name="settings_help_dialog_title">Help Center</string>
+    <string name="settings_help_dialog_message">Quick tips:\n\n• Open a video to start editing\n• Tap the timeline to trim, split and arrange clips\n• Use the tools panel for effects, text and overlays\n• Run Beat Analyzer to sync cuts to the beat</string>
+    <string name="settings_website_dialog_title">Website</string>
+    <string name="settings_website_dialog_message">The Phonk Editor website is not available yet. Stay tuned.</string>
+    <string name="settings_licenses_dialog_title">Open Source Licenses</string>
+    <string name="settings_licenses_dialog_message">Phonk Editor is built on open source software:\n\n• Jetpack Compose &amp; Material 3\n• FFmpeg (video processing)\n• Android MediaCodec (native decoding)\n\nLicenses are available with the app distribution.</string>
+    <string name="settings_social_share">Share Phonk Editor with your friends</string>
+    <string name="settings_social_share_subject">Check out Phonk Editor</string>
+    <string name="settings_manage_hint">Projects, cache and exports use space on this device. Manage projects in the Projects tab.</string>
 
     <!-- ============================= Crash reporting ============================= -->
 
@@ -543,4 +655,223 @@
     <string name="preset_social">Social · 1080×1920 · 30 FPS</string>
     <string name="preset_phonk_hq">Phonk High Quality · 1080×1920 · 60 FPS</string>
     <string name="preset_4k">4K · 2160×3840 · 60 FPS</string>
+
+    <!-- ============================= Home screen ============================= -->
+    <string name="home_brand_title">PHONK</string>
+    <string name="home_brand_subtitle">EDITOR</string>
+    <string name="home_pro">Pro</string>
+    <string name="home_tagline_1">Create. Edit. Phonk.</string>
+    <string name="home_tagline_2">Make it Unique.</string>
+    <string name="home_hero_description">The ultimate video editor for Phonk lovers. Edit videos, add beats, effects and create viral content like never before.</string>
+    <string name="home_new_project">New Project</string>
+    <string name="home_quick_actions">Quick Actions</string>
+    <string name="home_see_all">See All</string>
+    <string name="home_projects">Projects</string>
+    <string name="home_ai_tools">AI Tools</string>
+    <string name="home_ai_new">NEW</string>
+    <string name="home_trim_video">Trim Video</string>
+    <string name="home_templates">Templates</string>
+    <string name="home_effects">Effects</string>
+    <string name="home_add_music">Add Music</string>
+    <string name="home_add_text">Add Text</string>
+    <string name="home_ai_auto_edit">AI Auto Edit</string>
+    <string name="home_ai_auto_edit_desc">Auto edit your video in one click</string>
+    <string name="home_ai_beat_sync">Beat Sync</string>
+    <string name="home_ai_beat_sync_desc">Sync edits to the beat automatically</string>
+    <string name="home_ai_effects">AI Effects</string>
+    <string name="home_ai_effects_desc">Apply trending effects with AI</string>
+    <string name="home_ai_reframe">AI Reframe</string>
+    <string name="home_ai_reframe_desc">Resize video for any platform automatically</string>
+    <string name="home_empty_projects">No projects yet</string>
+    <string name="home_empty_projects_desc">Open a video to start creating.</string>
+    <string name="home_empty_cta">Open a video</string>
+    <string name="home_projects_empty_hint">Projects you create will show up here.</string>
+    <string name="home_project_date_size">%1$s · %2$s</string>
+
+    <!-- Home: creation sheet -->
+    <string name="create_sheet_title">Create New</string>
+    <string name="create_sheet_subtitle">Start a fresh project or bring in media</string>
+    <string name="create_project">New Project</string>
+    <string name="create_project_desc">Blank canvas to edit</string>
+    <string name="create_import_video">Import Video</string>
+    <string name="create_import_video_desc">Pick a video file</string>
+    <string name="create_import_photos">Import Photos</string>
+    <string name="create_import_photos_desc">Use an image in your edit</string>
+    <string name="create_record_video">Record Video</string>
+    <string name="create_record_video_desc">Capture with the camera</string>
+
+    <!-- Home: toasts -->
+    <string name="home_project_created">New project created</string>
+    <string name="home_video_imported">Video imported</string>
+    <string name="home_photo_added">Photo added to project</string>
+    <string name="home_recording_saved">Recording saved</string>
+    <string name="home_no_camera">No camera app available</string>
+    <string name="home_share_error">No app available to share</string>
+    <string name="home_project_file_missing">Project file not found</string>
+
+    <!-- Home: navigation -->
+    <string name="nav_templates">Templates</string>
+    <string name="nav_create">Create</string>
+
+    <!-- ============================= Templates screen ============================= -->
+    <string name="templates_title">Templates</string>
+    <string name="templates_subtitle">Start fast with a ready-made style</string>
+    <string name="templates_search_hint">Search templates…</string>
+    <string name="templates_category_all">All</string>
+    <string name="templates_category_phonk">Phonk</string>
+    <string name="templates_category_beat">Beat</string>
+    <string name="templates_category_dark">Dark</string>
+    <string name="templates_category_glitch">Glitch</string>
+    <string name="templates_category_retro">Retro</string>
+    <string name="templates_use">Use</string>
+    <string name="templates_applied">Template applied — open the editor to add your video</string>
+    <string name="templates_empty">No templates match</string>
+    <string name="templates_empty_desc">Try a different search or category.</string>
+    <string name="templates_created_project">%1$s</string>
+
+    <!-- ============================= Pro screen ============================= -->
+    <string name="pro_title">Phonk Editor Pro</string>
+    <string name="pro_subtitle">Get premium effects, unlimited exports and more.</string>
+    <string name="pro_upgrade">Upgrade to Pro</string>
+    <string name="pro_current">You are on the free plan</string>
+    <string name="pro_feature_unlimited">Unlimited 4K exports</string>
+    <string name="pro_feature_unlimited_desc">No resolution or duration limits</string>
+    <string name="pro_feature_effects">Exclusive AI effects</string>
+    <string name="pro_feature_effects_desc">Early access to trending effects</string>
+    <string name="pro_feature_beat">Pro beat presets</string>
+    <string name="pro_feature_beat_desc">Advanced cut patterns and sync</string>
+    <string name="pro_feature_watermark">No watermark</string>
+    <string name="pro_feature_watermark_desc">Clean exports, your brand only</string>
+    <string name="pro_feature_priority">Priority rendering</string>
+    <string name="pro_feature_priority_desc">Faster exports on every device</string>
+    <string name="pro_feature_support">Priority support</string>
+    <string name="pro_feature_support_desc">Get help faster</string>
+    <string name="pro_billing_title">Pro upgrade</string>
+    <string name="pro_billing_message">In-app billing is not available in this build yet. Pro features will be unlocked in a future release.</string>
+    <string name="pro_billing_ok">Got it</string>
+
+    <!-- ============================= New Settings Screen ============================= -->
+    <string name="settings_section_app_settings">APP SETTINGS</string>
+    <string name="settings_section_notifications">NOTIFICATIONS</string>
+    <string name="settings_section_privacy_security">PRIVACY AND SECURITY</string>
+    <string name="settings_section_support">SUPPORT</string>
+
+    <!-- Profile -->
+    <string name="profile_title_user">Phonk Editor User</string>
+    <string name="profile_subtitle_free">Free Account</string>
+    <string name="profile_title">Profile</string>
+    <string name="profile_app_name">Phonk Drop Editor</string>
+    <string name="profile_tagline">Edit. Sync. Drop.</string>
+    <string name="profile_stat_projects">Projects</string>
+    <string name="profile_stat_theme">Theme</string>
+    <string name="profile_theme_light">Light</string>
+    <string name="profile_theme_dark">Dark</string>
+    <string name="profile_theme_system">System</string>
+    <string name="profile_about_button">About</string>
+    <string name="profile_about_title">About Phonk Drop Editor</string>
+    <string name="profile_about_version">Version: %1$s</string>
+    <string name="profile_about_description">A professional mobile video editor for phonk music videos.</string>
+    <string name="profile_about_features">Features:</string>
+    <string name="profile_about_feature_beatsync">• Beat-synced editing</string>
+    <string name="profile_about_feature_effects">• Real-time effects</string>
+    <string name="profile_about_feature_color">• Color grading</string>
+    <string name="profile_about_feature_text">• Text &amp; overlay support</string>
+    <string name="profile_about_feature_ffmpeg">• FFmpeg export</string>
+
+    <!-- Pro upgrade card -->
+    <string name="upgrade_pro">Upgrade to Pro</string>
+
+    <!-- App Settings section rows -->
+    <string name="settings_app_language">Language</string>
+    <string name="settings_app_appearance">Appearance</string>
+    <string name="settings_app_autosave">Auto Save</string>
+    <string name="settings_app_autobackup">Auto Backup</string>
+
+    <!-- Editor section -->
+    <string name="settings_default_export_quality">Default Export Quality</string>
+    <string name="settings_export_quality_1080p">1080p</string>
+    <string name="settings_default_frame_rate">Default Frame Rate</string>
+    <string name="settings_frame_rate_30fps">30 FPS</string>
+    <string name="settings_default_aspect_ratio">Default Aspect Ratio</string>
+    <string name="settings_aspect_ratio_9_16">9:16</string>
+
+    <!-- Performance section -->
+    <!-- Notifications section -->
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_receive_app_notifications">Receive app notifications</string>
+    <string name="settings_notify_when_export_finishes">Notify when video export finishes</string>
+    <string name="settings_get_updates_new_features">Get updates about new features</string>
+
+    <!-- Storage -->
+    <string name="manage_storage">Manage Storage</string>
+
+    <!-- Privacy & Security -->
+    <string name="privacy_policy">Privacy Policy</string>
+    <string name="terms_of_service">Terms of Service</string>
+    <string name="data_permissions">Data and Permissions</string>
+    <string name="delete_account">Delete Account</string>
+
+    <!-- Delete account dialog -->
+
+    <!-- Support section -->
+    <string name="help_center">Help Center</string>
+    <string name="contact_support">Contact Support</string>
+    <string name="report_a_problem">Report a Problem</string>
+    <string name="rate_phonk_editor">Rate Phonk Editor</string>
+
+    <!-- About section -->
+    <string name="open_source_licenses">Open Source Licenses</string>
+    <string name="website">Website</string>
+    <string name="follow_us">Follow Us</string>
+
+    <!-- Footer -->
+    <string name="footer_actions">Edit • Create • Go Viral</string>
+
+    <!-- ========================= Editor tool navigation ====================== -->
+    <string name="sub_volume">Volume</string>
+    <string name="sub_crop">Crop</string>
+    <string name="sub_rotate">Rotate</string>
+    <string name="sub_filter">Filter</string>
+    <string name="sub_aspect_ratio">Aspect Ratio</string>
+    <string name="sub_fade">Fade</string>
+    <string name="sub_denoise">Denoise</string>
+    <string name="sub_beats">Beats</string>
+    <string name="sub_voice_changer">Voice Changer</string>
+    <string name="sub_add_text">Add Text</string>
+    <string name="sub_font">Font</string>
+    <string name="sub_style">Style</string>
+    <string name="sub_animation">Animation</string>
+    <string name="sub_alignment">Alignment</string>
+    <string name="sub_spacing">Spacing</string>
+    <string name="sub_add_overlay">Add Overlay</string>
+    <string name="sub_image">Image</string>
+    <string name="sub_shape">Shape</string>
+    <string name="sub_pip">PIP</string>
+    <string name="sub_opacity">Opacity</string>
+    <string name="sub_video_effects">Video Effects</string>
+    <string name="sub_body_effects">Body Effects</string>
+    <string name="sub_glitch">Glitch</string>
+    <string name="sub_lens">Lens</string>
+    <string name="sub_shake">Shake</string>
+    <string name="sub_neon">Neon</string>
+    <string name="sub_reverse">Reverse</string>
+    <string name="sub_freeze">Freeze</string>
+    <string name="sub_replace">Replace</string>
+    <string name="sub_settings">Settings</string>
+
+    <!-- Editor control bar -->
+    <string name="tool_keyframe">Keyframe</string>
+    <string name="tool_marker">Marker</string>
+    <string name="zoom_out">Zoom out</string>
+    <string name="zoom_in">Zoom in</string>
+
+    <!-- Editor chrome -->
+    <string name="editor_close">Close</string>
+    <string name="editor_select_first">Select a clip or overlay first</string>
+    <string name="editor_reverse_need_clips">Add at least 2 clips to reverse</string>
+    <string name="editor_ratio_hint">Preview canvas updates automatically</string>
+    <string name="save_status_saved">Saved</string>
+    <string name="save_status_gpu">GPU</string>
+    <string name="playback_prev">Previous</string>
+    <string name="playback_next">Next</string>
 </resources>

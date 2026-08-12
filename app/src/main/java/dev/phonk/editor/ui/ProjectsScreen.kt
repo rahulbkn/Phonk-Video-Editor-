@@ -56,8 +56,9 @@ import dev.phonk.editor.R
 import dev.phonk.editor.analysis.AudioExtractor
 import dev.phonk.editor.model.PhonkProject
 import dev.phonk.editor.project.ProjectStore
-import dev.phonk.editor.ui.components.BottomNav
 import dev.phonk.editor.ui.components.NavTab
+import dev.phonk.editor.ui.components.UiDimens
+import dev.phonk.editor.ui.home.BottomNav
 import dev.phonk.editor.util.ThumbnailLoader
 
 private fun queryName(resolver: android.content.ContentResolver, uri: Uri): String {
@@ -75,6 +76,7 @@ private fun queryName(resolver: android.content.ContentResolver, uri: Uri): Stri
 fun ProjectsScreen(
     onBack: () -> Unit,
     onOpen: (PhonkProject) -> Unit,
+    onNavigate: (NavTab) -> Unit = {},
 ) {
     val context = LocalContext.current
     val store = remember(context) { ProjectStore(context) }
@@ -143,7 +145,8 @@ fun ProjectsScreen(
             BottomNav(
                 activeTab = NavTab.PROJECTS,
                 onTabSelected = { tab ->
-                    if (tab == NavTab.HOME) onBack()
+                    if (tab == NavTab.PROJECTS) return@BottomNav
+                    onNavigate(tab)
                 },
             )
         },
@@ -174,7 +177,7 @@ fun ProjectsScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding)
-                        .padding(horizontal = 24.dp),
+                        .padding(horizontal = UiDimens.screenPadding),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
@@ -184,13 +187,13 @@ fun ProjectsScreen(
                         fontWeight = FontWeight.SemiBold,
                         color = scheme.onSurface,
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(UiDimens.spaceSm))
                     Text(
                         text = stringResource(R.string.empty_no_projects_subtitle),
                         style = MaterialTheme.typography.bodyMedium,
                         color = scheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.height(UiDimens.spaceXl))
                     TextButton(
                         onClick = { launcher.launch(arrayOf("video/*", "application/mp4")) },
                     ) {
@@ -203,12 +206,12 @@ fun ProjectsScreen(
                         .fillMaxSize()
                         .padding(padding),
                     contentPadding = PaddingValues(
-                        start = 24.dp,
-                        end = 24.dp,
-                        top = 16.dp,
+                        start = UiDimens.screenPadding,
+                        end = UiDimens.screenPadding,
+                        top = UiDimens.spaceLg,
                         bottom = 100.dp,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(UiDimens.itemSpacing),
                 ) {
                     items(projects) { project ->
                         ProjectCard(

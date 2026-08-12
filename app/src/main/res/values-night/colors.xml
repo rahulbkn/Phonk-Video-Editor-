@@ -28,6 +28,35 @@
 
     <!-- Extended palette -->
     <color name="lavender">#1A1A2E</color>
+
+    <!-- Phonk Home palette (always-dark, identical to light file) -->
+    <color name="home_bg">#050509</color>
+    <color name="home_card">#0D0D15</color>
+    <color name="home_card_secondary">#12121B</color>
+    <color name="home_border">#292933</color>
+    <color name="home_primary">#A83FFF</color>
+    <color name="home_primary_bright">#C45CFF</color>
+    <color name="home_primary_selected">#9A35E8</color>
+    <color name="home_text">#F5F5F7</color>
+    <color name="home_text_secondary">#9696A3</color>
+    <color name="home_success">#19D98B</color>
+
+    <!-- Phonk Settings palette (always-dark, identical to light file) -->
+    <color name="settings_bg">#050508</color>
+    <color name="settings_card">#101017</color>
+    <color name="settings_card_secondary">#13131C</color>
+    <color name="settings_border">#282832</color>
+    <color name="settings_primary">#A83FFF</color>
+    <color name="settings_primary_bright">#C75BFF</color>
+    <color name="settings_primary_selected">#9A35E8</color>
+    <color name="settings_deep">#651A9C</color>
+    <color name="settings_text">#F4F4F7</color>
+    <color name="settings_text_secondary">#9999A5</color>
+    <color name="settings_muted">#70707B</color>
+    <color name="settings_success">#18D99A</color>
+    <color name="settings_danger">#FF3F55</color>
+    <color name="settings_switch_off">#272733</color>
+
     <color name="success">#39D7B1</color>
     <color name="success_container">#123B36</color>
     <color name="warning">#FB923C</color>

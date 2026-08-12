@@ -1,7 +1,8 @@
 package dev.phonk.editor.ui
 
 import android.app.Activity
-import android.os.Build
+import android.content.Intent
+import android.net.Uri
 import android.os.Environment
 import android.text.format.Formatter
 import android.widget.Toast
@@ -13,43 +14,53 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.BatteryStd
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Help
+import androidx.compose.material.icons.filled.HighQuality
+import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.RestartAlt
-import androidx.compose.material.icons.filled.Rotate90DegreesCcw
-import androidx.compose.material.icons.filled.SavedSearch
-import androidx.compose.material.icons.filled.SettingsBrightness
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PlayCircleOutline
+import androidx.compose.material.icons.filled.PrivacyTip
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -58,60 +69,108 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import dev.phonk.editor.BuildConfig
 import dev.phonk.editor.R
+import dev.phonk.editor.project.ProjectStore
 import dev.phonk.editor.settings.SettingsManager
-import dev.phonk.editor.ui.components.SettingsCard
-import dev.phonk.editor.ui.components.SettingsDestructiveRow
-import dev.phonk.editor.ui.components.SettingsInfoRow
-import dev.phonk.editor.ui.components.SettingsNavigationRow
-import dev.phonk.editor.ui.components.SettingsRow
-import dev.phonk.editor.ui.components.SettingsRadioRow
-import dev.phonk.editor.ui.components.SettingsSwitchRow
+import dev.phonk.editor.ui.settings.AppearanceBottomSheet
+import dev.phonk.editor.ui.settings.AspectRatioBottomSheet
+import dev.phonk.editor.ui.settings.ClearCacheDialog
+import dev.phonk.editor.ui.settings.DeleteAccountDialog
+import dev.phonk.editor.ui.settings.ExportQualityBottomSheet
+import dev.phonk.editor.ui.settings.FrameRateBottomSheet
+import dev.phonk.editor.ui.settings.LanguageBottomSheet
+import dev.phonk.editor.ui.settings.PreviewQualityBottomSheet
+import dev.phonk.editor.ui.settings.ProfileCard
+import dev.phonk.editor.ui.settings.PhonkSettingsCard
+import dev.phonk.editor.ui.settings.ProUpgradeCard
+import dev.phonk.editor.ui.settings.SettingsActionRow
+import dev.phonk.editor.ui.settings.SettingsDivider
+import dev.phonk.editor.ui.settings.SettingsFooter
+import dev.phonk.editor.ui.settings.SettingsHeader
+import dev.phonk.editor.ui.settings.SettingsInfoDialog
+import dev.phonk.editor.ui.settings.SettingsNavigationRow
+import dev.phonk.editor.ui.settings.SettingsRow
+import dev.phonk.editor.ui.settings.SettingsSectionHeader
+import dev.phonk.editor.ui.settings.SettingsSwitchRow
+import dev.phonk.editor.ui.settings.StorageCard
+import dev.phonk.editor.ui.settings.settingsPalette
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
-/** Settings screen: all app preferences organized into clear sections. */
+/**
+ * PHONK EDITOR settings screen — always-dark premium redesign.
+ *
+ * Matches the home screen identity (near-black surfaces, neon purple accents)
+ * and keeps the full real-data plumbing: every picker/toggle persists through
+ * [SettingsManager], storage sizes are computed from the device, cache is
+ * actually cleared and destructive actions are confirmed before running.
+ */
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenDeveloper: () -> Unit,
+    onOpenProfile: (() -> Unit)? = null,
+    onManageStorage: (() -> Unit)? = null,
 ) {
+    val palette = settingsPalette()
     val context = LocalContext.current
-    val scheme = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
+    val store = remember(context) { ProjectStore(context) }
 
-    // State for dialogs
+    // Sheet/dialog state
+    var showLanguageSheet by remember { mutableStateOf(false) }
+    var showAppearanceSheet by remember { mutableStateOf(false) }
+    var showExportQualitySheet by remember { mutableStateOf(false) }
+    var showFrameRateSheet by remember { mutableStateOf(false) }
+    var showAspectRatioSheet by remember { mutableStateOf(false) }
+    var showPreviewQualitySheet by remember { mutableStateOf(false) }
     var showClearCacheDialog by remember { mutableStateOf(false) }
-    var showResetDialog by remember { mutableStateOf(false) }
-    var showAspectPicker by remember { mutableStateOf(false) }
-    var showResolutionPicker by remember { mutableStateOf(false) }
-    var showFpsPicker by remember { mutableStateOf(false) }
-    var showVideoQualityPicker by remember { mutableStateOf(false) }
-    var showAudioQualityPicker by remember { mutableStateOf(false) }
+    var showDeleteAccountDialog by remember { mutableStateOf(false) }
+    var showProDialog by remember { mutableStateOf(false) }
+    var infoDialog by remember { mutableStateOf<Pair<String, String>?>(null) }
 
-    // Read current settings
+    // Info dialog content (hoisted so it can be referenced from non-composable lambdas)
+    val privacyInfo = stringResource(R.string.settings_privacy_dialog_title) to
+        stringResource(R.string.settings_privacy_dialog_message)
+    val termsInfo = stringResource(R.string.settings_terms_dialog_title) to
+        stringResource(R.string.settings_terms_dialog_message)
+    val permissionsInfo = stringResource(R.string.settings_permissions_dialog_title) to
+        stringResource(R.string.settings_permissions_dialog_message)
+    val helpInfo = stringResource(R.string.settings_help_dialog_title) to
+        stringResource(R.string.settings_help_dialog_message)
+    val licensesInfo = stringResource(R.string.settings_licenses_dialog_title) to
+        stringResource(R.string.settings_licenses_dialog_message)
+    val websiteInfo = stringResource(R.string.settings_website_dialog_title) to
+        stringResource(R.string.settings_website_dialog_message)
+
+    // Current persisted values
     val themeMode = SettingsManager.themeMode
     val languageCode = SettingsManager.languageCode
     val devRevealed = SettingsManager.devRevealed
     val defaultResolution = SettingsManager.defaultResolution
     val defaultFps = SettingsManager.defaultFps
-    val videoBitrate = SettingsManager.videoBitrateMbps
-    val audioBitrate = SettingsManager.audioBitrateKbps
-    val hardwareAccel = SettingsManager.hardwareAccel
-    val addToGallery = SettingsManager.addToGallery
     val defaultAspect = SettingsManager.defaultAspect
+    val previewQuality = SettingsManager.previewQuality
+    val hardwareAccel = SettingsManager.hardwareAccel
     val autosave = SettingsManager.autosave
+    val autoBackup = SettingsManager.autoBackup
+    val lowPowerMode = SettingsManager.lowPowerMode
+    val notificationsEnabled = SettingsManager.notificationsEnabled
+    val exportNotifications = SettingsManager.exportNotifications
+    val featureNotifications = SettingsManager.featureNotifications
 
-    // Hidden developer reveal gesture
+    // Hidden developer reveal gesture (7 rapid taps on the title)
     var devTaps by remember { mutableIntStateOf(0) }
 
     fun applyLanguage(code: String) {
@@ -120,10 +179,9 @@ fun SettingsScreen(
         (context as? Activity)?.recreate()
     }
 
-    fun storageUsage(): Triple<String, String, String> {
+    fun storageUsage(): Triple<Long, Long, Long> {
         val projectsDir = File(context.filesDir, "projects")
         val cacheDir = context.cacheDir
-        val exportDir = File(Environment.getExternalStorageDirectory(), "Movies/Phonk")
 
         fun dirSize(dir: File): Long {
             if (!dir.exists()) return 0
@@ -132,13 +190,11 @@ fun SettingsScreen(
 
         val projectsSize = dirSize(projectsDir)
         val cacheSize = dirSize(cacheDir)
-        val exportsSize = dirSize(exportDir)
-
-        val formatter = Formatter.formatShortFileSize(context, projectsSize)
-        val cacheStr = Formatter.formatShortFileSize(context, cacheSize)
-        val exportsStr = Formatter.formatShortFileSize(context, exportsSize)
-
-        return Triple(formatter, cacheStr, exportsStr)
+        val total = runCatching {
+            Environment.getExternalStorageDirectory().totalSpace
+        }.getOrDefault(0L)
+        val free = maxOf(total - projectsSize - cacheSize, 0L)
+        return Triple(projectsSize, cacheSize, free)
     }
 
     fun clearCache(): String {
@@ -148,598 +204,555 @@ fun SettingsScreen(
         return Formatter.formatShortFileSize(context, sizeBefore)
     }
 
-    fun ffmpegAvailable(): Boolean {
-        val ffmpegFile = File(context.filesDir, "ffmpeg")
-        return ffmpegFile.exists() && ffmpegFile.canExecute()
+    fun deleteAccount() {
+        store.listRecent().forEach { store.delete(it.id) }
+        SettingsManager.resetAll(context)
+        Toast.makeText(context, R.string.account_deleted, Toast.LENGTH_SHORT).show()
     }
 
-    Scaffold(
-        containerColor = androidx.compose.ui.graphics.Color.Transparent,
-        topBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(scheme.background)
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = stringResource(R.string.back),
-                        tint = scheme.onBackground,
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.settings),
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = scheme.onBackground,
-                    modifier = Modifier
-                        .padding(start = 4.dp)
-                        .clickable {
-                            devTaps += 1
-                            scope.launch {
-                                delay(2500)
-                                devTaps = 0
+    fun shareApp() {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, context.getString(R.string.app_name))
+        }
+        runCatching {
+            context.startActivity(Intent.createChooser(send, context.getString(R.string.settings_social_share)))
+        }.onFailure {
+            Toast.makeText(context, R.string.settings_no_email_app, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun rateApp() {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${context.packageName}"))
+        runCatching {
+            context.startActivity(intent)
+        }.onFailure {
+            Toast.makeText(context, R.string.not_available, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun openSocial() {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, context.getString(R.string.app_name))
+            putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.settings_social_share_subject))
+        }
+        runCatching {
+            context.startActivity(Intent.createChooser(send, context.getString(R.string.settings_social_share)))
+        }.onFailure {
+            Toast.makeText(context, R.string.settings_no_email_app, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Real storage numbers
+    val (projectsBytes, cacheBytes, freeBytes) = storageUsage()
+    val usedBytes = projectsBytes + cacheBytes
+    val totalBytes = usedBytes + freeBytes
+    val usedPercent = if (totalBytes > 0) usedBytes.toFloat() / totalBytes.toFloat() else 0f
+    val usedLabel = Formatter.formatShortFileSize(context, usedBytes)
+
+    val languageLabel = when (languageCode) {
+        SettingsManager.LANG_EN -> stringResource(R.string.language_english)
+        SettingsManager.LANG_HI -> stringResource(R.string.language_hindi)
+        else -> stringResource(R.string.language_system)
+    }
+    val themeLabel = when (themeMode) {
+        SettingsManager.THEME_LIGHT -> stringResource(R.string.theme_light)
+        SettingsManager.THEME_DARK -> stringResource(R.string.theme_dark)
+        else -> stringResource(R.string.theme_system)
+    }
+
+    // Always light status/nav bar icons over the dark settings background.
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val window = (view.context as? Activity)?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        controller?.isAppearanceLightStatusBars = false
+        controller?.isAppearanceLightNavigationBars = false
+        onDispose {
+            controller?.isAppearanceLightStatusBars = true
+            controller?.isAppearanceLightNavigationBars = true
+        }
+    }
+
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(palette.background),
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                top = statusTop + 8.dp,
+                bottom = navBottom + 32.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            item {
+                SettingsHeader(
+                    onBack = onBack,
+                    title = stringResource(R.string.settings),
+                    onTitleClick = {
+                        devTaps += 1
+                        scope.launch {
+                            delay(2500)
+                            devTaps = 0
+                        }
+                        if (devTaps >= SettingsManager.DEV_REVEAL_TAPS) {
+                            if (!SettingsManager.devRevealed) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.debug_revealed),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
                             }
-                            if (devTaps >= SettingsManager.DEV_REVEAL_TAPS) {
-                                if (!SettingsManager.devRevealed) {
-                                    Toast.makeText(
-                                        context,
-                                        context.getString(R.string.debug_revealed),
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                                SettingsManager.setDevRevealed(context, true)
-                                devTaps = 0
-                            }
-                        },
+                            SettingsManager.setDevRevealed(context, true)
+                            devTaps = 0
+                        }
+                    },
                 )
             }
-        },
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0f to scheme.background,
-                        1f to scheme.surfaceContainerLowest,
+
+            // ===== PROFILE =====
+            item {
+                ProfileCard(onClick = { onOpenProfile?.invoke() })
+            }
+
+            // ===== PHONK PRO =====
+            item {
+                ProUpgradeCard(onUpgrade = { showProDialog = true })
+            }
+
+            // ===== APP SETTINGS =====
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_sec_app))
+            }
+            item {
+                PhonkSettingsCard {
+                    SettingsNavigationRow(
+                        icon = Icons.Filled.Language,
+                        title = stringResource(R.string.language),
+                        subtitle = languageLabel,
+                        value = languageLabel,
+                        onClick = { showLanguageSheet = true },
                     )
-                ),
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(
-                    start = 20.dp,
-                    end = 20.dp,
-                    top = 8.dp,
-                    bottom = 32.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                // ===== APPEARANCE =====
-                item {
-                    SettingsCard(
-                        title = stringResource(R.string.settings_section_appearance),
-                        icon = Icons.Filled.Palette,
-                    ) {
-                        SettingsRadioRow(
-                            icon = Icons.Filled.SettingsBrightness,
-                            title = stringResource(R.string.theme_system),
-                            selected = themeMode == SettingsManager.THEME_SYSTEM,
-                            onClick = { SettingsManager.setThemeMode(context, SettingsManager.THEME_SYSTEM) },
-                        )
-                        SettingsRadioRow(
-                            icon = Icons.Filled.LightMode,
-                            title = stringResource(R.string.theme_light),
-                            selected = themeMode == SettingsManager.THEME_LIGHT,
-                            onClick = { SettingsManager.setThemeMode(context, SettingsManager.THEME_LIGHT) },
-                        )
-                        SettingsRadioRow(
-                            icon = Icons.Filled.DarkMode,
-                            title = stringResource(R.string.theme_dark),
-                            selected = themeMode == SettingsManager.THEME_DARK,
-                            onClick = { SettingsManager.setThemeMode(context, SettingsManager.THEME_DARK) },
-                        )
-                    }
+                    SettingsDivider()
+                    SettingsNavigationRow(
+                        icon = Icons.Filled.DarkMode,
+                        title = stringResource(R.string.settings_appearance),
+                        subtitle = themeLabel,
+                        value = themeLabel,
+                        onClick = { showAppearanceSheet = true },
+                    )
+                    SettingsDivider()
+                    SettingsSwitchRow(
+                        icon = Icons.Filled.Save,
+                        title = stringResource(R.string.settings_auto_save),
+                        subtitle = stringResource(R.string.settings_auto_save_hint),
+                        checked = autosave,
+                        onCheckedChange = { SettingsManager.setAutosave(context, it) },
+                    )
+                    SettingsDivider()
+                    SettingsSwitchRow(
+                        icon = Icons.Filled.CloudUpload,
+                        title = stringResource(R.string.settings_auto_backup),
+                        subtitle = stringResource(R.string.settings_auto_backup_hint),
+                        checked = autoBackup,
+                        onCheckedChange = { SettingsManager.setAutoBackup(context, it) },
+                    )
                 }
+            }
 
-                // ===== LANGUAGE =====
-                item {
-                    SettingsCard(
-                        title = stringResource(R.string.settings_section_language),
-                        icon = Icons.Filled.Translate,
-                    ) {
-                        SettingsRadioRow(
-                            icon = Icons.Filled.Translate,
-                            title = stringResource(R.string.language_system),
-                            selected = languageCode == SettingsManager.LANG_SYSTEM,
-                            onClick = { applyLanguage(SettingsManager.LANG_SYSTEM) },
-                        )
-                        SettingsRadioRow(
-                            icon = Icons.Filled.Translate,
-                            title = stringResource(R.string.language_english),
-                            selected = languageCode == SettingsManager.LANG_EN,
-                            onClick = { applyLanguage(SettingsManager.LANG_EN) },
-                        )
-                        SettingsRadioRow(
-                            icon = Icons.Filled.Translate,
-                            title = stringResource(R.string.language_hindi),
-                            selected = languageCode == SettingsManager.LANG_HI,
-                            onClick = { applyLanguage(SettingsManager.LANG_HI) },
-                        )
-                    }
+            // ===== EDITOR =====
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_sec_editor))
+            }
+            item {
+                PhonkSettingsCard {
+                    SettingsNavigationRow(
+                        icon = Icons.Filled.HighQuality,
+                        title = stringResource(R.string.settings_export_quality),
+                        subtitle = defaultResolution,
+                        value = defaultResolution,
+                        onClick = { showExportQualitySheet = true },
+                    )
+                    SettingsDivider()
+                    SettingsNavigationRow(
+                        icon = Icons.Filled.Speed,
+                        title = stringResource(R.string.settings_frame_rate),
+                        subtitle = "$defaultFps FPS",
+                        value = "$defaultFps FPS",
+                        onClick = { showFrameRateSheet = true },
+                    )
+                    SettingsDivider()
+                    SettingsNavigationRow(
+                        icon = Icons.Filled.AspectRatio,
+                        title = stringResource(R.string.settings_aspect_ratio),
+                        subtitle = defaultAspect,
+                        value = defaultAspect,
+                        onClick = { showAspectRatioSheet = true },
+                    )
+                    SettingsDivider()
+                    SettingsNavigationRow(
+                        icon = Icons.Filled.Visibility,
+                        title = stringResource(R.string.settings_preview_quality),
+                        subtitle = previewQuality,
+                        value = previewQuality,
+                        onClick = { showPreviewQualitySheet = true },
+                    )
                 }
+            }
 
-                // ===== EDITOR =====
-                item {
-                    SettingsCard(
-                        title = stringResource(R.string.settings_section_editor),
-                        icon = Icons.Filled.Tune,
-                    ) {
-                        SettingsNavigationRow(
-                            icon = Icons.Filled.Rotate90DegreesCcw,
-                            title = stringResource(R.string.settings_default_aspect),
-                            subtitle = stringResource(R.string.settings_default_aspect_hint),
-                            value = defaultAspect,
-                            onClick = { showAspectPicker = true },
-                        )
-                        SettingsNavigationRow(
-                            icon = Icons.Filled.Speed,
-                            title = stringResource(R.string.settings_default_fps),
-                            subtitle = stringResource(R.string.settings_default_fps_hint),
-                            value = "$defaultFps FPS",
-                            onClick = { showFpsPicker = true },
-                        )
-                    }
-                }
-
-                // ===== EXPORT =====
-                item {
-                    SettingsCard(
-                        title = stringResource(R.string.settings_section_export),
-                        icon = Icons.Filled.Videocam,
-                    ) {
-                        SettingsNavigationRow(
-                            icon = Icons.Filled.Movie,
-                            title = stringResource(R.string.settings_default_resolution),
-                            subtitle = stringResource(R.string.settings_default_resolution_hint),
-                            value = defaultResolution,
-                            onClick = { showResolutionPicker = true },
-                        )
-                        SettingsNavigationRow(
-                            icon = Icons.Filled.SavedSearch,
-                            title = stringResource(R.string.settings_video_quality),
-                            value = "${videoBitrate} Mbps",
-                            onClick = { showVideoQualityPicker = true },
-                        )
-                        SettingsNavigationRow(
-                            icon = Icons.Filled.Speed,
-                            title = stringResource(R.string.settings_audio_quality),
-                            value = "${audioBitrate} kbps",
-                            onClick = { showAudioQualityPicker = true },
-                        )
-                        SettingsSwitchRow(
-                            icon = Icons.Filled.Memory,
-                            title = stringResource(R.string.settings_hardware_accel),
-                            subtitle = stringResource(R.string.settings_hardware_accel_hint),
-                            checked = hardwareAccel,
-                            onCheckedChange = { SettingsManager.setHardwareAccel(context, it) },
-                        )
-                        SettingsSwitchRow(
-                            icon = Icons.Filled.Folder,
-                            title = stringResource(R.string.settings_add_to_gallery),
-                            subtitle = stringResource(R.string.settings_add_to_gallery_hint),
-                            checked = addToGallery,
-                            onCheckedChange = { SettingsManager.setAddToGallery(context, it) },
-                        )
-                    }
-                }
-
-                // ===== STORAGE =====
-                item {
-                    val (projectsSize, cacheSize, exportsSize) = storageUsage()
-                    SettingsCard(
-                        title = stringResource(R.string.settings_section_storage),
+            // ===== PERFORMANCE =====
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_sec_performance))
+            }
+            item {
+                PhonkSettingsCard {
+                    SettingsSwitchRow(
+                        icon = Icons.Filled.Memory,
+                        title = stringResource(R.string.settings_hardware_accel),
+                        subtitle = stringResource(R.string.settings_hardware_accel_hint),
+                        checked = hardwareAccel,
+                        onCheckedChange = { SettingsManager.setHardwareAccel(context, it) },
+                    )
+                    SettingsDivider()
+                    SettingsSwitchRow(
+                        icon = Icons.Filled.BatteryStd,
+                        title = stringResource(R.string.settings_low_power_mode),
+                        subtitle = stringResource(R.string.settings_low_power_mode_hint),
+                        checked = lowPowerMode,
+                        onCheckedChange = { SettingsManager.setLowPowerMode(context, it) },
+                    )
+                    SettingsDivider()
+                    SettingsActionRow(
                         icon = Icons.Filled.Storage,
-                    ) {
-                        SettingsInfoRow(
-                            icon = Icons.Filled.Folder,
-                            title = stringResource(R.string.settings_storage_projects),
-                            value = projectsSize,
-                        )
-                        SettingsInfoRow(
-                            icon = Icons.Filled.Timer,
-                            title = stringResource(R.string.settings_storage_cache),
-                            value = cacheSize,
-                        )
-                        SettingsInfoRow(
-                            icon = Icons.Filled.Movie,
-                            title = stringResource(R.string.settings_storage_exports),
-                            value = exportsSize,
-                        )
-                        SettingsRow(
-                            icon = Icons.Filled.Delete,
-                            title = stringResource(R.string.settings_clear_cache),
-                            subtitle = stringResource(R.string.settings_clear_cache_hint),
-                            onClick = { showClearCacheDialog = true },
-                        )
-                    }
+                        title = stringResource(R.string.settings_cache),
+                        subtitle = Formatter.formatShortFileSize(context, cacheBytes),
+                        actionLabel = stringResource(R.string.clear),
+                        onClick = { showClearCacheDialog = true },
+                    )
                 }
+            }
 
-                // ===== PROJECT =====
-                item {
-                    SettingsCard(
-                        title = stringResource(R.string.settings_section_project),
-                        icon = Icons.Filled.Timer,
-                    ) {
-                        SettingsSwitchRow(
-                            icon = Icons.Filled.Timer,
-                            title = stringResource(R.string.settings_autosave),
-                            subtitle = stringResource(R.string.settings_autosave_hint),
-                            checked = autosave,
-                            onCheckedChange = { SettingsManager.setAutosave(context, it) },
-                        )
-                    }
+            // ===== NOTIFICATIONS =====
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_sec_notifications))
+            }
+            item {
+                PhonkSettingsCard {
+                    SettingsSwitchRow(
+                        icon = Icons.Filled.Notifications,
+                        title = stringResource(R.string.settings_notifications),
+                        subtitle = stringResource(R.string.settings_notifications_hint),
+                        checked = notificationsEnabled,
+                        onCheckedChange = { SettingsManager.setNotifications(context, it) },
+                    )
+                    SettingsDivider()
+                    SettingsSwitchRow(
+                        icon = Icons.Filled.VideoLibrary,
+                        title = stringResource(R.string.settings_export_completed),
+                        subtitle = stringResource(R.string.settings_export_completed_hint),
+                        checked = exportNotifications,
+                        onCheckedChange = { SettingsManager.setExportNotifications(context, it) },
+                    )
+                    SettingsDivider()
+                    SettingsSwitchRow(
+                        icon = Icons.Filled.Star,
+                        title = stringResource(R.string.settings_new_features),
+                        subtitle = stringResource(R.string.settings_new_features_hint),
+                        checked = featureNotifications,
+                        onCheckedChange = { SettingsManager.setFeatureNotifications(context, it) },
+                    )
                 }
+            }
 
-                // ===== DIAGNOSTICS =====
-                item {
-                    val appVersion = BuildConfig.VERSION_NAME
-                    val buildNumber = BuildConfig.VERSION_CODE
-                    val androidVersion = "Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})"
-                    val deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}"
-                    val cpuArch = Build.SUPPORTED_ABIS.joinToString(", ")
-                    val ffmpegStatus = if (ffmpegAvailable()) {
-                        stringResource(R.string.settings_ffmpeg_available)
-                    } else {
-                        stringResource(R.string.settings_ffmpeg_missing)
-                    }
+            // ===== STORAGE =====
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_sec_storage))
+            }
+            item {
+                StorageCard(
+                    usedLabel = usedLabel,
+                    usedPercent = usedPercent,
+                    projectsSize = Formatter.formatShortFileSize(context, projectsBytes),
+                    cacheSize = Formatter.formatShortFileSize(context, cacheBytes),
+                    freeSize = Formatter.formatShortFileSize(context, freeBytes),
+                    onManage = { onManageStorage?.invoke() },
+                )
+            }
 
-                    SettingsCard(
-                        title = stringResource(R.string.settings_section_diagnostics),
+            // ===== PRIVACY & SECURITY =====
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_sec_privacy))
+            }
+            item {
+                PhonkSettingsCard {
+                    SettingsRow(
+                        icon = Icons.Filled.PrivacyTip,
+                        title = stringResource(R.string.settings_privacy_policy),
+                        onClick = { infoDialog = privacyInfo },
+                        trailing = { Chevron() },
+                    )
+                    SettingsDivider()
+                    SettingsRow(
+                        icon = Icons.Filled.Description,
+                        title = stringResource(R.string.settings_terms_of_service),
+                        onClick = { infoDialog = termsInfo },
+                        trailing = { Chevron() },
+                    )
+                    SettingsDivider()
+                    SettingsRow(
+                        icon = Icons.Filled.Lock,
+                        title = stringResource(R.string.settings_data_permissions),
+                        onClick = { infoDialog = permissionsInfo },
+                        trailing = { Chevron() },
+                    )
+                    SettingsDivider()
+                    SettingsRow(
+                        icon = Icons.Filled.DeleteForever,
+                        title = stringResource(R.string.settings_delete_account),
+                        onClick = { showDeleteAccountDialog = true },
+                        iconTint = palette.danger,
+                        titleColor = palette.danger,
+                        trailing = {
+                            Icon(
+                                imageVector = Icons.Filled.ChevronRight,
+                                contentDescription = null,
+                                tint = palette.danger,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                    )
+                }
+            }
+
+            // ===== SUPPORT =====
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_sec_support))
+            }
+            item {
+                PhonkSettingsCard {
+                    SettingsRow(
+                        icon = Icons.Filled.Help,
+                        title = stringResource(R.string.settings_help_center),
+                        onClick = { infoDialog = helpInfo },
+                        trailing = { Chevron() },
+                    )
+                    SettingsDivider()
+                    SettingsRow(
+                        icon = Icons.Filled.Headset,
+                        title = stringResource(R.string.settings_contact_support),
+                        onClick = ::shareApp,
+                        trailing = { Chevron() },
+                    )
+                    SettingsDivider()
+                    SettingsRow(
                         icon = Icons.Filled.BugReport,
-                    ) {
-                        SettingsInfoRow(
-                            icon = Icons.Filled.Info,
-                            title = stringResource(R.string.settings_app_version),
-                            value = appVersion,
-                        )
-                        SettingsInfoRow(
-                            icon = Icons.Filled.Info,
-                            title = stringResource(R.string.settings_build_number),
-                            value = buildNumber.toString(),
-                        )
-                        SettingsInfoRow(
-                            icon = Icons.Filled.Info,
-                            title = stringResource(R.string.settings_android_version),
-                            value = androidVersion,
-                        )
-                        SettingsInfoRow(
-                            icon = Icons.Filled.Info,
-                            title = stringResource(R.string.settings_device_model),
-                            value = deviceModel,
-                        )
-                        SettingsInfoRow(
-                            icon = Icons.Filled.Memory,
-                            title = stringResource(R.string.settings_cpu_arch),
-                            value = cpuArch,
-                        )
-                        SettingsInfoRow(
-                            icon = Icons.Filled.BugReport,
-                            title = stringResource(R.string.settings_ffmpeg_status),
-                            value = ffmpegStatus,
-                        )
-                        SettingsRow(
-                            icon = Icons.Filled.BugReport,
-                            title = stringResource(R.string.settings_copy_diagnostics),
-                            onClick = {
-                                val diagnostics = """
-                                    |Phonk Drop Editor Diagnostics
-                                    |App Version: $appVersion
-                                    |Build: $buildNumber
-                                    |Android: $androidVersion
-                                    |Device: $deviceModel
-                                    |CPU: $cpuArch
-                                    |FFmpeg: $ffmpegStatus
-                                """.trimMargin()
-                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Diagnostics", diagnostics))
-                                Toast.makeText(context, context.getString(R.string.diagnostics_copied), Toast.LENGTH_SHORT).show()
-                            },
-                        )
-                    }
+                        title = stringResource(R.string.settings_report_problem),
+                        onClick = ::shareApp,
+                        trailing = { Chevron() },
+                    )
+                    SettingsDivider()
+                    SettingsRow(
+                        icon = Icons.Filled.Star,
+                        title = stringResource(R.string.settings_rate_phonk),
+                        onClick = ::rateApp,
+                        trailing = { Chevron() },
+                    )
                 }
+            }
 
-                // ===== ABOUT =====
-                item {
-                    SettingsCard(
-                        title = stringResource(R.string.settings_section_about),
+            // ===== ABOUT =====
+            item {
+                SettingsSectionHeader(stringResource(R.string.settings_sec_about))
+            }
+            item {
+                PhonkSettingsCard {
+                    SettingsRow(
                         icon = Icons.Filled.Info,
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                        ) {
+                        title = stringResource(R.string.settings_app_version),
+                        trailing = {
                             Text(
-                                text = stringResource(R.string.app_name),
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = scheme.onSurface,
-                            )
-                            Text(
-                                text = stringResource(R.string.settings_about_description),
+                                text = BuildConfig.VERSION_NAME,
                                 fontSize = 13.sp,
-                                color = scheme.onSurfaceVariant,
+                                fontWeight = FontWeight.SemiBold,
+                                color = palette.textSecondary,
                             )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = "v${BuildConfig.VERSION_NAME}",
-                                fontSize = 12.sp,
-                                color = scheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+                        },
+                    )
+                    SettingsDivider()
+                    SettingsRow(
+                        icon = Icons.Filled.Code,
+                        title = stringResource(R.string.settings_open_source_licenses),
+                        onClick = { infoDialog = licensesInfo },
+                        trailing = { Chevron() },
+                    )
+                    SettingsDivider()
+                    SettingsRow(
+                        icon = Icons.Filled.Public,
+                        title = stringResource(R.string.settings_website),
+                        onClick = { infoDialog = websiteInfo },
+                        trailing = { Chevron() },
+                    )
+                    SettingsDivider()
+                    SettingsRow(
+                        icon = Icons.Filled.Share,
+                        title = stringResource(R.string.settings_follow_us),
+                        onClick = ::openSocial,
+                        trailing = {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                SocialDot(Icons.Filled.PhotoCamera, onClick = ::openSocial)
+                                SocialDot(Icons.Filled.PlayCircleOutline, onClick = ::openSocial)
+                                SocialDot(Icons.Filled.MusicNote, onClick = ::openSocial)
+                            }
+                        },
+                    )
                 }
+            }
 
-                // ===== DANGER ZONE =====
+            // ===== DEVELOPER (hidden until revealed) =====
+            if (devRevealed) {
                 item {
-                    SettingsCard(
-                        title = stringResource(R.string.settings_section_danger),
-                        icon = Icons.Filled.Delete,
-                    ) {
-                        SettingsDestructiveRow(
-                            icon = Icons.Filled.RestartAlt,
-                            title = stringResource(R.string.settings_reset_settings),
-                            subtitle = stringResource(R.string.settings_reset_settings_hint),
-                            onClick = { showResetDialog = true },
-                        )
-                    }
+                    SettingsRow(
+                        icon = Icons.Filled.BugReport,
+                        title = stringResource(R.string.debug_screen_title),
+                        onClick = onOpenDeveloper,
+                        trailing = { Chevron() },
+                    )
                 }
+            }
 
-                // Developer entry (hidden unless revealed)
-                if (devRevealed) {
-                    item {
-                        SettingsCard(
-                            title = stringResource(R.string.developer),
-                            icon = Icons.Filled.BugReport,
-                        ) {
-                            SettingsRow(
-                                icon = Icons.Filled.BugReport,
-                                title = stringResource(R.string.debug_screen_title),
-                                onClick = onOpenDeveloper,
-                            )
-                        }
-                    }
-                }
+            item {
+                SettingsFooter()
             }
         }
     }
 
+    // ===== SHEETS =====
+    if (showLanguageSheet) {
+        LanguageBottomSheet(
+            selected = languageCode,
+            onSelect = { applyLanguage(it) },
+            onDismiss = { showLanguageSheet = false },
+        )
+    }
+    if (showAppearanceSheet) {
+        AppearanceBottomSheet(
+            selected = themeMode,
+            onSelect = { SettingsManager.setThemeMode(context, it) },
+            onDismiss = { showAppearanceSheet = false },
+        )
+    }
+    if (showExportQualitySheet) {
+        ExportQualityBottomSheet(
+            selected = defaultResolution,
+            onSelect = {
+                SettingsManager.setDefaultResolution(context, it)
+                showExportQualitySheet = false
+            },
+            onDismiss = { showExportQualitySheet = false },
+        )
+    }
+    if (showFrameRateSheet) {
+        FrameRateBottomSheet(
+            selected = defaultFps,
+            onSelect = {
+                SettingsManager.setDefaultFps(context, it)
+                showFrameRateSheet = false
+            },
+            onDismiss = { showFrameRateSheet = false },
+        )
+    }
+    if (showAspectRatioSheet) {
+        AspectRatioBottomSheet(
+            selected = defaultAspect,
+            onSelect = {
+                SettingsManager.setDefaultAspect(context, it)
+                showAspectRatioSheet = false
+            },
+            onDismiss = { showAspectRatioSheet = false },
+        )
+    }
+    if (showPreviewQualitySheet) {
+        PreviewQualityBottomSheet(
+            selected = previewQuality,
+            onSelect = {
+                SettingsManager.setPreviewQuality(context, it)
+                showPreviewQualitySheet = false
+            },
+            onDismiss = { showPreviewQualitySheet = false },
+        )
+    }
+
     // ===== DIALOGS =====
-
-    // Clear cache dialog
     if (showClearCacheDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearCacheDialog = false },
-            title = { Text(stringResource(R.string.dialog_clear_cache_title)) },
-            text = { Text(stringResource(R.string.dialog_clear_cache_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val cleared = clearCache()
-                        showClearCacheDialog = false
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.cache_cleared, cleared),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    },
-                ) {
-                    Text(
-                        text = stringResource(R.string.settings_clear_cache),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
+        ClearCacheDialog(
+            onConfirm = {
+                val cleared = clearCache()
+                showClearCacheDialog = false
+                Toast.makeText(context, context.getString(R.string.cache_cleared, cleared), Toast.LENGTH_SHORT).show()
             },
-            dismissButton = {
-                TextButton(onClick = { showClearCacheDialog = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
+            onDismiss = { showClearCacheDialog = false },
         )
     }
-
-    // Reset settings dialog
-    if (showResetDialog) {
-        AlertDialog(
-            onDismissRequest = { showResetDialog = false },
-            title = { Text(stringResource(R.string.dialog_reset_settings_title)) },
-            text = { Text(stringResource(R.string.dialog_reset_settings_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        SettingsManager.resetAll(context)
-                        showResetDialog = false
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.settings_reset_done),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    },
-                ) {
-                    Text(
-                        text = stringResource(R.string.settings_reset_settings),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+    if (showDeleteAccountDialog) {
+        DeleteAccountDialog(
+            onConfirm = {
+                deleteAccount()
+                showDeleteAccountDialog = false
             },
-            dismissButton = {
-                TextButton(onClick = { showResetDialog = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
+            onDismiss = { showDeleteAccountDialog = false },
         )
     }
-
-    // Aspect ratio picker
-    if (showAspectPicker) {
-        AlertDialog(
-            onDismissRequest = { showAspectPicker = false },
-            title = { Text(stringResource(R.string.settings_default_aspect)) },
-            text = {
-                Column {
-                    listOf("9:16", "1:1", "16:9", "4:5").forEach { aspect ->
-                        SettingsRadioRow(
-                            icon = Icons.Filled.Rotate90DegreesCcw,
-                            title = aspect,
-                            selected = defaultAspect == aspect,
-                            onClick = {
-                                SettingsManager.setDefaultAspect(context, aspect)
-                                showAspectPicker = false
-                            },
-                        )
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showAspectPicker = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
+    if (showProDialog) {
+        SettingsInfoDialog(
+            title = stringResource(R.string.pro_billing_title),
+            message = stringResource(R.string.pro_billing_message),
+            onDismiss = { showProDialog = false },
         )
     }
-
-    // Resolution picker
-    if (showResolutionPicker) {
-        AlertDialog(
-            onDismissRequest = { showResolutionPicker = false },
-            title = { Text(stringResource(R.string.settings_default_resolution)) },
-            text = {
-                Column {
-                    listOf("720p", "1080p", "1440p", "4K").forEach { res ->
-                        SettingsRadioRow(
-                            icon = Icons.Filled.Movie,
-                            title = res,
-                            selected = defaultResolution == res,
-                            onClick = {
-                                SettingsManager.setDefaultResolution(context, res)
-                                showResolutionPicker = false
-                            },
-                        )
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showResolutionPicker = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
+    infoDialog?.let { (title, message) ->
+        SettingsInfoDialog(
+            title = title,
+            message = message,
+            onDismiss = { infoDialog = null },
         )
     }
+}
 
-    // FPS picker
-    if (showFpsPicker) {
-        AlertDialog(
-            onDismissRequest = { showFpsPicker = false },
-            title = { Text(stringResource(R.string.settings_default_fps)) },
-            text = {
-                Column {
-                    listOf(24, 30, 60).forEach { fps ->
-                        SettingsRadioRow(
-                            icon = Icons.Filled.Speed,
-                            title = "$fps FPS",
-                            selected = defaultFps == fps,
-                            onClick = {
-                                SettingsManager.setDefaultFps(context, fps)
-                                showFpsPicker = false
-                            },
-                        )
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showFpsPicker = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-        )
-    }
+@Composable
+private fun Chevron() {
+    val palette = settingsPalette()
+    Icon(
+        imageVector = Icons.Filled.ChevronRight,
+        contentDescription = null,
+        tint = palette.muted,
+        modifier = Modifier.size(20.dp),
+    )
+}
 
-    // Video quality picker
-    if (showVideoQualityPicker) {
-        AlertDialog(
-            onDismissRequest = { showVideoQualityPicker = false },
-            title = { Text(stringResource(R.string.settings_video_quality)) },
-            text = {
-                Column {
-                    listOf(
-                        6 to stringResource(R.string.settings_video_quality_low),
-                        12 to stringResource(R.string.settings_video_quality_medium),
-                        20 to stringResource(R.string.settings_video_quality_high),
-                    ).forEach { (bitrate, label) ->
-                        SettingsRadioRow(
-                            icon = Icons.Filled.SavedSearch,
-                            title = "$label ($bitrate Mbps)",
-                            selected = videoBitrate == bitrate,
-                            onClick = {
-                                SettingsManager.setVideoBitrate(context, bitrate)
-                                showVideoQualityPicker = false
-                            },
-                        )
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showVideoQualityPicker = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-        )
-    }
-
-    // Audio quality picker
-    if (showAudioQualityPicker) {
-        AlertDialog(
-            onDismissRequest = { showAudioQualityPicker = false },
-            title = { Text(stringResource(R.string.settings_audio_quality)) },
-            text = {
-                Column {
-                    listOf(
-                        128 to stringResource(R.string.settings_audio_quality_low),
-                        192 to stringResource(R.string.settings_audio_quality_medium),
-                        256 to stringResource(R.string.settings_audio_quality_high),
-                    ).forEach { (bitrate, label) ->
-                        SettingsRadioRow(
-                            icon = Icons.Filled.Speed,
-                            title = label,
-                            selected = audioBitrate == bitrate,
-                            onClick = {
-                                SettingsManager.setAudioBitrate(context, bitrate)
-                                showAudioQualityPicker = false
-                            },
-                        )
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showAudioQualityPicker = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
+@Composable
+private fun SocialDot(icon: ImageVector, onClick: () -> Unit) {
+    val palette = settingsPalette()
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(30.dp)
+            .clip(CircleShape)
+            .background(palette.primary.copy(alpha = 0.08f))
+            .clickable(onClick = onClick),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = palette.textSecondary,
+            modifier = Modifier.size(16.dp),
         )
     }
 }
