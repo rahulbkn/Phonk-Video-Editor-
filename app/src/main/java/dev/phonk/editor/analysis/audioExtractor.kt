@@ -28,7 +28,7 @@ object AudioExtractor {
 
     /** Fast metadata-only duration probe, falls back to decoding. */
     fun queryDuration(resolver: ContentResolver, uri: Uri): Long {
-        return resolver.query(uri, null, null, null, null)?.use { c ->
+        val fromQuery = resolver.query(uri, null, null, null, null)?.use { c ->
             if (c.moveToFirst()) {
                 val idx = c.getColumnIndex(MediaStore.Video.Media.DURATION)
                     .takeIf { it >= 0 }
@@ -36,6 +36,20 @@ object AudioExtractor {
                 if (idx != null && idx >= 0) c.getLong(idx) else 0L
             } else 0L
         } ?: 0L
+        if (fromQuery > 0L) return fromQuery
+        // Some providers (e.g. SAF document URIs) do not index duration in the
+        // MediaStore; fall back to a metadata read so newly imported projects
+        // get a real duration instead of 0 (which breaks the whole timeline).
+        return runCatching {
+            val r = MediaMetadataRetriever()
+            try {
+                val fd = resolver.openFileDescriptor(uri, "r") ?: return@runCatching 0L
+                r.setDataSource(fd.fileDescriptor)
+                r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            } finally {
+                r.release()
+            }
+        }.getOrDefault(0L)
     }
 
     /** Source video pixel dimensions (0,0 when unavailable or not a video). */

@@ -81,6 +81,26 @@ data class PhonkProject(
     /** Total destination timeline length in ms, derived from clips. */
     fun timelineDurationMs(): Long = clips.maxOfOrNull { it.destEndMs } ?: 0L
 
+    /** Folds the player's real media duration back into the project when the
+     *  stored metadata was missing (e.g. a failed probe at import time). When
+     *  there is no usable clip yet, materializes a single full-length clip so
+     *  the header, player and timeline all agree on the total duration. */
+    fun withMediaDuration(realMs: Long): PhonkProject {
+        if (realMs <= 0L) return this
+        val known = videoDurationMs > 0L
+        val needsClip = clips.isEmpty() || clips.all { it.destEndMs <= 0L }
+        if (known && !needsClip) return this
+        val clipsOrFull = if (needsClip) {
+            listOf(ClipSegment(sourceStartMs = 0L, sourceEndMs = realMs, destStartMs = 0L, destEndMs = realMs))
+        } else clips
+        return copy(
+            videoDurationMs = if (known) videoDurationMs else realMs,
+            clips = clipsOrFull,
+            selectedClipId = if (selectedClipId.isNullOrBlank() || needsClip) clipsOrFull.firstOrNull()?.id else selectedClipId,
+            updatedAt = System.currentTimeMillis(),
+        )
+    }
+
     /** The full shared grade (single source of truth for preview + export). */
     fun colorGrade(): ColorGrade = ColorGradeMaps.of(this)
 

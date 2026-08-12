@@ -90,6 +90,11 @@ class EditorViewModel(
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
+    /** True once the player's real duration has been folded back into the
+     *  project. Reset whenever the media URI changes (setProject/importVideo)
+     *  so a reloaded or replaced source is re-validated. */
+    private var durationSynced = false
+
     val analysisManager: AnalysisManager =
         AnalysisManager(app.contentResolver, viewModelScope)
 
@@ -190,6 +195,7 @@ class EditorViewModel(
         val mediaUri = p.videoUri ?: p.audioUri
         if (mediaUri != null) player.setVideo(Uri.parse(mediaUri)) else player.setVideo(null)
         player.pause()
+        durationSynced = false
         _isPlaying.value = false
         _playheadMs.value = 0L
         pendingSeekDestMs = null
@@ -232,6 +238,7 @@ class EditorViewModel(
         persist()
         player.setVideo(uri)
         player.pause()
+        durationSynced = false
         _playheadMs.value = 0L
         pendingSeekDestMs = null
         beginAnalysis()
@@ -961,9 +968,32 @@ class EditorViewModel(
         _isPlaying.value = d.newIsPlaying
     }
 
+    /** Back-fills the real media duration from the player when the stored
+     *  metadata was missing (the MediaStore probe failed at import time, e.g.
+     *  for SAF document URIs). Without it the header, player controls and
+     *  timeline all read 00:00 and every seek collapses to zero while the video
+     *  still plays. Also materializes the full-length clip so split/trim work. */
+    private fun ensureVideoDuration() {
+        if (durationSynced) return
+        val p = _project.value ?: return
+        if (p.videoDurationMs > 0L && p.clips.any { it.destEndMs > 0L }) {
+            durationSynced = true
+            return
+        }
+        val real = player.player.duration
+        if (real <= 0L) return
+        durationSynced = true
+        val updated = p.withMediaDuration(real)
+        if (updated != p) {
+            _project.value = updated
+            persist()
+        }
+    }
+
     /** Syncs the timeline playhead with the preview (called on a timer).
      *  Exposes destination timeline time so UI coordinates always match clips. */
     fun pumpPosition() {
+        ensureVideoDuration()
         val pos = player.pollPosition()
         val pending = pendingSeekDestMs
         if (pending != null) {
