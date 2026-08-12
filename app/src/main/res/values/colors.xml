@@ -94,6 +94,7 @@
     <color name="border_subtle">#1E1E28</color>
     <color name="border_panel">#25252E</color>
     <color name="text_ruler">#9E9EAE</color>
+    <color name="overlay_handle">#F5F5F7</color>
     <color name="text_muted">#6B6B7B</color>
     <color name="text_disabled">#B8B8C4</color>
     <color name="text_status">#6B6B7B</color>
@@ -103,4 +104,12 @@
     <color name="audio_fx">#39D7B1</color>
     <color name="toolbar_bg">#0B0B10</color>
     <color name="preview_bg">#0B0B10</color>
+
+    <!-- Timeline track-title icon colors (one per track, editor always-dark) -->
+    <color name="track_video">#A855F7</color>
+    <color name="track_audio">#22D3EE</color>
+    <color name="track_overlay">#FB923C</color>
+    <color name="track_text">#34D399</color>
+    <color name="track_effects">#FACC15</color>
+    <color name="track_fx">#39D7B1</color>
 </resources>
