@@ -73,6 +73,16 @@ object EditorTokens {
     val PrimaryHeight = 48.dp       // primary action buttons
     val StatusBarHeight = 24.dp     // bottom status bar
 
+    // Bar heights (editor chrome)
+    val TopBarHeight = 52.dp        // editor top bar
+    val AspectBarHeight = 40.dp     // aspect / canvas bar
+    val PlayerBarHeight = 48.dp     // playback controls bar
+    val TimelineBarHeight = 44.dp   // timeline tool bar
+    val MainToolbarHeight = 56.dp   // bottom main tool bar
+
+    // Preview
+    val PreviewHeightFraction = 0.30f  // preview max height as fraction of screen height
+
     // Visual icon sizes (visual can be smaller than the touch target)
     val Icon = 18.dp
     val IconCompact = 16.dp

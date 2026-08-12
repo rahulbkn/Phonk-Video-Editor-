@@ -1,5 +1,6 @@
 package dev.phonk.editor.ui
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -85,6 +86,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -97,6 +99,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -106,6 +109,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.view.WindowCompat
 import dev.phonk.editor.R
 import dev.phonk.editor.editor.CutPattern
 import dev.phonk.editor.export.ExportDialog
@@ -128,6 +132,7 @@ import dev.phonk.editor.ui.components.EditorTokens
 import dev.phonk.editor.ui.components.EditorToolButton
 import dev.phonk.editor.ui.components.PhonkButton
 import dev.phonk.editor.ui.components.PhonkProgressBar
+import dev.phonk.editor.ui.components.PhonkSeekBar
 import dev.phonk.editor.ui.components.PhonkSlider
 import dev.phonk.editor.ui.components.SectionHeader
 import dev.phonk.editor.ui.components.ToolbarHeight
@@ -380,6 +385,21 @@ fun EditorScreen(projectId: String, onBack: () -> Unit) {
     val canRedo by vm.canRedo.collectAsStateWithLifecycle()
     val controller = remember { TimelineController { vm.project.value ?: PhonkProject() } }
 
+    // The editor is an always-dark surface, so it needs light status/nav bar
+    // icons regardless of the active theme (otherwise icons vanish against the
+    // dark toolbar in light mode).
+    val editorView = LocalView.current
+    DisposableEffect(editorView) {
+        val window = (editorView.context as? Activity)?.window
+        val ic = window?.let { WindowCompat.getInsetsController(it, editorView) }
+        ic?.isAppearanceLightStatusBars = false
+        ic?.isAppearanceLightNavigationBars = false
+        onDispose {
+            ic?.isAppearanceLightStatusBars = true
+            ic?.isAppearanceLightNavigationBars = true
+        }
+    }
+
     LaunchedEffect(Unit) {
         val loaded = ProjectStore(appCtx).load(projectId)
         if (loaded != null) {
@@ -412,11 +432,11 @@ fun EditorScreen(projectId: String, onBack: () -> Unit) {
         }
     }
 
-    Box(Modifier.fillMaxSize().background(colorResource(R.color.background))) {
+    Box(Modifier.fillMaxSize().background(colorResource(R.color.toolbar_bg))) {
         if (fullscreen) {
             FullscreenPreview(vm, p, isPlaying, playhead, selectedOverlayId, fullscreen, onToggleFullscreen = { fullscreen = false }, onEditText = { editOverlayId = it })
         } else {
-            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).background(colorResource(R.color.background))) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).background(colorResource(R.color.toolbar_bg))) {
                 // ─── Top Bar ─────────────────────────────────────────────────
                 TopBar(onBack = onBack, p = p, totalDur = totalDur, canUndo = canUndo, canRedo = canRedo, onUndo = { vm.undo() }, onRedo = { vm.redo() }, onExport = { vm.resetExport(); showExport = true })
 
@@ -430,7 +450,7 @@ fun EditorScreen(projectId: String, onBack: () -> Unit) {
                 PreviewSection(vm, p, isPlaying, playhead, selectedOverlayId, selectedAspect, fullscreen, onToggleFullscreen = { fullscreen = !fullscreen }, onEditText = { editOverlayId = it })
 
                 // ─── Compact Player Controls ─────────────────────────────────
-                PlayerControls(playhead = playhead, totalDur = totalDur, isPlaying = isPlaying, onSeekBack = { vm.setCurrentPosition((playhead - 5000).coerceAtLeast(0)) }, onPlayPause = { vm.playPause() }, onSeekForward = { vm.setCurrentPosition((playhead + 5000).coerceAtMost(totalDur)) }, fullscreen = fullscreen, onToggleFullscreen = { fullscreen = !fullscreen })
+                PlayerControls(playhead = playhead, totalDur = totalDur, isPlaying = isPlaying, onSeekBack = { vm.setCurrentPosition((playhead - 5000).coerceAtLeast(0)) }, onPlayPause = { vm.playPause() }, onSeekForward = { vm.setCurrentPosition((playhead + 5000).coerceAtMost(totalDur)) }, onSeek = { vm.setCurrentPosition(it) }, fullscreen = fullscreen, onToggleFullscreen = { fullscreen = !fullscreen })
 
                 // ─── Timeline Toolbar ────────────────────────────────────────
                 TimelineToolbar(
@@ -557,10 +577,9 @@ private fun MainToolbar(
 ) {
     val tools = MainTool.entries
     Row(
-        Modifier.fillMaxWidth().height(56.dp).background(colorResource(R.color.surface_timeline))
+        Modifier.fillMaxWidth().height(EditorTokens.MainToolbarHeight).background(colorResource(R.color.surface_timeline))
             .border(0.5.dp, colorResource(R.color.border_default))
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 4.dp, vertical = 4.dp),
+            .padding(horizontal = EditorTokens.Space4, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         tools.forEach { tool ->
@@ -569,7 +588,7 @@ private fun MainToolbar(
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .width(60.dp)
+                    .weight(1f)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(12.dp))
                     .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = bgAlpha) else Color.Transparent)
@@ -775,8 +794,8 @@ private fun FullscreenPreview(vm: EditorViewModel, p: PhonkProject?, isPlaying: 
 
 @Composable
 private fun TopBar(onBack: () -> Unit, p: PhonkProject?, totalDur: Long, canUndo: Boolean, canRedo: Boolean, onUndo: () -> Unit, onRedo: () -> Unit, onExport: () -> Unit) {
-    Row(Modifier.fillMaxWidth().height(ToolbarHeight).background(colorResource(R.color.toolbar_bg))
-        .border(0.5.dp, colorResource(R.color.border_default)).padding(horizontal = 8.dp),
+    Row(Modifier.fillMaxWidth().height(EditorTokens.TopBarHeight).background(colorResource(R.color.toolbar_bg))
+        .border(0.5.dp, colorResource(R.color.border_default)).padding(horizontal = EditorTokens.Space8),
         verticalAlignment = Alignment.CenterVertically) {
         EditorIconButton(
             icon = Icons.AutoMirrored.Filled.ArrowBack,
@@ -784,9 +803,9 @@ private fun TopBar(onBack: () -> Unit, p: PhonkProject?, totalDur: Long, canUndo
             onClick = onBack,
             background = Color.Transparent,
         )
-        Column(Modifier.weight(1f).padding(horizontal = EditorTokens.Space8)) {
-            Text(p?.name ?: "Editor", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("1080×1920 · ${p?.export?.fps?.fps ?: 30}fps · ${formatClock(totalDur)}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        Column(Modifier.weight(1f).padding(horizontal = EditorTokens.Space8), verticalArrangement = Arrangement.Center) {
+            Text(p?.name ?: "Editor", fontWeight = FontWeight.Bold, fontSize = EditorTokens.FontPrimary, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("1080×1920 · ${p?.export?.fps?.fps ?: 30}fps · ${formatClock(totalDur)}", fontSize = EditorTokens.FontLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         EditorIconButton(
             icon = Icons.Filled.Undo,
@@ -815,9 +834,9 @@ private fun TopBar(onBack: () -> Unit, p: PhonkProject?, totalDur: Long, canUndo
 @Composable
 private fun PreviewSection(vm: EditorViewModel, p: PhonkProject?, isPlaying: Boolean, playhead: Long, selectedOverlayId: String?, selectedAspect: String, fullscreen: Boolean, onToggleFullscreen: () -> Unit, onEditText: (String) -> Unit) {
     val config = LocalConfiguration.current
-    val previewMaxH = (config.screenHeightDp * 0.32f).dp
+    val previewMaxH = (config.screenHeightDp * EditorTokens.PreviewHeightFraction).dp
     Box(
-        Modifier.fillMaxWidth().height(previewMaxH).padding(horizontal = EditorTokens.Space8, vertical = 2.dp).background(colorResource(R.color.background)),
+        Modifier.fillMaxWidth().height(previewMaxH).padding(horizontal = EditorTokens.Space8, vertical = EditorTokens.Space4).background(colorResource(R.color.preview_bg)),
         contentAlignment = Alignment.Center,
     ) {
         EditorPreview(
@@ -839,9 +858,9 @@ private fun PreviewSection(vm: EditorViewModel, p: PhonkProject?, isPlaying: Boo
 }
 
 @Composable
-private fun PlayerControls(playhead: Long, totalDur: Long, isPlaying: Boolean, onSeekBack: () -> Unit, onPlayPause: () -> Unit, onSeekForward: () -> Unit, fullscreen: Boolean, onToggleFullscreen: () -> Unit) {
-    Row(Modifier.fillMaxWidth().height(44.dp).background(colorResource(R.color.toolbar_bg))
-        .border(0.5.dp, colorResource(R.color.border_default)).padding(horizontal = 6.dp),
+private fun PlayerControls(playhead: Long, totalDur: Long, isPlaying: Boolean, onSeekBack: () -> Unit, onPlayPause: () -> Unit, onSeekForward: () -> Unit, onSeek: (Long) -> Unit, fullscreen: Boolean, onToggleFullscreen: () -> Unit) {
+    Row(Modifier.fillMaxWidth().height(EditorTokens.PlayerBarHeight).background(colorResource(R.color.toolbar_bg))
+        .border(0.5.dp, colorResource(R.color.border_default)).padding(horizontal = EditorTokens.Space4),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         EditorIconButton(
             icon = Icons.Filled.SkipPrevious,
@@ -867,11 +886,21 @@ private fun PlayerControls(playhead: Long, totalDur: Long, isPlaying: Boolean, o
             background = Color.Transparent,
             tint = colorResource(R.color.text_disabled),
         )
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.width(EditorTokens.Space4))
+        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+            PhonkSeekBar(
+                progress = if (totalDur > 0) (playhead.toFloat() / totalDur).coerceIn(0f, 1f) else 0f,
+                onSeek = { f -> onSeek((f * totalDur).toLong().coerceIn(0L, totalDur)) },
+                activeColor = MaterialTheme.colorScheme.primary,
+                thumbSize = 12.dp,
+                trackHeight = 3.dp,
+            )
+        }
+        Spacer(Modifier.width(EditorTokens.Space4))
         Text(formatClock(playhead), fontSize = EditorTokens.FontTool, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         Text(" / ", fontSize = EditorTokens.FontTool, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(formatClock(totalDur), fontSize = EditorTokens.FontTool, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.width(2.dp))
         EditorIconButton(
             icon = Icons.Filled.Fullscreen,
             contentDescription = "Fullscreen",
@@ -887,7 +916,7 @@ private fun PlayerControls(playhead: Long, totalDur: Long, isPlaying: Boolean, o
 private fun AspectToolbar(selectedAspect: String, onAspectSelected: (String) -> Unit) {
     val aspects = listOf("1:1", "4:5", "9:16", "16:9", "2.35:1")
     Row(
-        Modifier.fillMaxWidth().height(40.dp).background(colorResource(R.color.toolbar_bg))
+        Modifier.fillMaxWidth().height(EditorTokens.AspectBarHeight).background(colorResource(R.color.toolbar_bg))
             .border(0.5.dp, colorResource(R.color.border_default)).padding(horizontal = EditorTokens.Space8),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space6),
@@ -922,8 +951,8 @@ private fun TimelineToolbar(
     onZoomOut: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().height(44.dp).background(colorResource(R.color.toolbar_bg))
-            .border(0.5.dp, colorResource(R.color.border_default)).padding(horizontal = 6.dp),
+        Modifier.fillMaxWidth().height(EditorTokens.TimelineBarHeight).background(colorResource(R.color.toolbar_bg))
+            .border(0.5.dp, colorResource(R.color.border_default)).padding(horizontal = EditorTokens.Space4),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {

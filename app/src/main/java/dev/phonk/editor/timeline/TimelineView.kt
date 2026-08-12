@@ -72,13 +72,16 @@ class TimelineView @JvmOverloads constructor(
 
     private val density get() = resources.displayMetrics.density
 
-    // Ruler occupies the top of the view; tracks render below it.
-    private val rulerH = 24f
-    private val trackAreaTop = rulerH + 4f
-    private val trackLabelWidth = 68f
-    private val labelZone get() = trackLabelWidth + 4f
+    // Ruler occupies the top of the view; tracks render below it. All layout
+    // metrics are density-scaled so the timeline reads identically on every
+    // device (a fixed-px label column would clip "Audio FX" on high-dpi).
+    private val rulerH get() = 26f * density
+    private val trackAreaTop get() = rulerH + 6f * density
+    private val trackLabelWidth get() = 84f * density
+    private val labelZone get() = trackLabelWidth + 8f * density
+    private val trackRightMargin get() = 4f * density
 
-    private fun trackH(): Float = (height - trackAreaTop - 4f) / tracks.size
+    private fun trackH(): Float = (height - trackAreaTop - trackRightMargin) / tracks.size
     private fun trackTop(i: Int): Float = trackAreaTop + i * trackH()
     private fun rowAt(y: Float): Int = if (y < trackAreaTop) -1
         else ((y - trackAreaTop) / trackH()).toInt().coerceIn(0, tracks.size - 1)
@@ -89,10 +92,10 @@ class TimelineView @JvmOverloads constructor(
     private val dropPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val playPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val rulerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 1.5f }
-    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 20f * density; isFakeBoldText = true }
+    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 18f * density; isFakeBoldText = true }
     private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val clipBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
-    private val selPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
+    private val clipBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f * density }
+    private val selPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f * density }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val handlePath = Path()
@@ -181,63 +184,68 @@ class TimelineView @JvmOverloads constructor(
         val tH = trackH()
 
         // 1. Track backgrounds (subtle dark) + labels.
+        labelPaint.textSize = 18f * density
         tracks.forEachIndexed { i, track ->
             val top = trackTop(i)
             trackPaint.color = context.getColor(R.color.surface_track)
-            canvas.drawRect(labelZone, top, w - 4f, top + tH - 2f, trackPaint)
+            canvas.drawRect(labelZone, top, w - trackRightMargin, top + tH - trackRightMargin, trackPaint)
             trackPaint.color = context.getColor(R.color.border_default)
-            canvas.drawLine(labelZone, top + tH - 2f, w - 4f, top + tH - 2f, trackPaint)
+            canvas.drawLine(labelZone, top + tH - trackRightMargin, w - trackRightMargin, top + tH - trackRightMargin, trackPaint)
             labelPaint.color = context.getColor(R.color.text_ruler)
-            canvas.drawText(track.label, 6f, top + tH / 2f + 6f, labelPaint)
+            canvas.drawText(track.label, 8f * density, top + tH / 2f + 6f * density, labelPaint)
         }
 
+        // 1b. Vertical time grid, aligned to the ruler ticks so rows share one
+        //     time axis and stay visually scannable at every zoom level.
+        drawTimeGrid(canvas, labelZone, trackAreaTop, h - trackRightMargin)
+
         // 2. Real (time-mapped) waveform on the audio track.
-        drawWaveform(canvas, labelZone, trackTop(1), w - 4f, tH - 4f)
+        drawWaveform(canvas, labelZone, trackTop(1), w - trackRightMargin, tH - trackRightMargin)
 
         // 3. Video clips + filmstrip (live trim window when trimming).
         val wantThumbs = mutableListOf<Pair<String?, Long>>()
-        drawClips(canvas, labelZone, trackTop(0), tH - 4f, primary, wantThumbs)
+        drawClips(canvas, labelZone, trackTop(0), tH - trackRightMargin, primary, wantThumbs)
         requestThumbnails(wantThumbs)
 
         // 4. Overlay + text bars (with their own keyframes).
-        drawOverlayBars(canvas, labelZone, trackTop(2), tH - 4f, context.getColor(R.color.primary), project.overlays)
-        drawOverlayBars(canvas, labelZone, trackTop(3), tH - 4f, context.getColor(R.color.primary), project.textLayers)
+        drawOverlayBars(canvas, labelZone, trackTop(2), tH - trackRightMargin, context.getColor(R.color.primary), project.overlays)
+        drawOverlayBars(canvas, labelZone, trackTop(3), tH - trackRightMargin, context.getColor(R.color.primary), project.textLayers)
 
         // 5. Effect bars on the effects track.
-        drawBars(canvas, labelZone, trackTop(4), tH - 4f, context.getColor(R.color.accent),
+        drawBars(canvas, labelZone, trackTop(4), tH - trackRightMargin, context.getColor(R.color.accent),
             project.clips.filter { it.effect != dev.phonk.editor.model.EffectKind.NONE }
                 .map { it.destStartMs to it.destEndMs })
 
         // 6. Beat ticks, drop markers, grade keyframes.
         drawBeatsAndDrops(canvas, labelZone, w, h, tH)
-        drawGradeKeyframes(canvas, labelZone, trackTop(4), tH - 4f)
+        drawGradeKeyframes(canvas, labelZone, trackTop(4), tH - trackRightMargin)
 
         // 7. Time ruler.
-        drawTimeRuler(canvas, labelZone, w, 4f, 18f, context.getColor(R.color.text_ruler))
+        drawTimeRuler(canvas, labelZone, w, 6f * density, 22f * density, context.getColor(R.color.text_ruler))
 
         // 8. Playhead: thin needle + compact handle (drawn above tracks but
         //    below the trim handles so a nearby handle stays visible).
         drawPlayhead(canvas, h)
 
         // 9. Selection trim handles on top so the playhead can never hide them.
-        drawTrimHandles(canvas, trackTop(0), tH - 4f, primary)
-        drawOverlayTrimHandles(canvas, trackTop(2), tH - 4f, context.getColor(R.color.primary), project.overlays)
-        drawOverlayTrimHandles(canvas, trackTop(3), tH - 4f, context.getColor(R.color.primary), project.textLayers)
+        drawTrimHandles(canvas, trackTop(0), tH - trackRightMargin, primary)
+        drawOverlayTrimHandles(canvas, trackTop(2), tH - trackRightMargin, context.getColor(R.color.primary), project.overlays)
+        drawOverlayTrimHandles(canvas, trackTop(3), tH - trackRightMargin, context.getColor(R.color.primary), project.textLayers)
 
         // 10. Overlay/text titles re-drawn last so the playhead needle (and
         //     handle) never obscures a layer's label.
-        drawOverlayLabels(canvas, labelZone, trackTop(2), tH - 4f, project.overlays)
-        drawOverlayLabels(canvas, labelZone, trackTop(3), tH - 4f, project.textLayers)
+        drawOverlayLabels(canvas, labelZone, trackTop(2), tH - trackRightMargin, project.overlays)
+        drawOverlayLabels(canvas, labelZone, trackTop(3), tH - trackRightMargin, project.textLayers)
     }
 
     private fun drawPlayhead(canvas: Canvas, h: Float) {
         val playX = controller.timeToX(controller.currentMs)
         playPaint.strokeWidth = 2f * density
         playPaint.color = context.getColor(R.color.overlay_handle)
-        canvas.drawLine(playX, 4f, playX, h - 8f, playPaint)
+        canvas.drawLine(playX, 4f * density, playX, h - 8f * density, playPaint)
         // small diamond handle at the top
         val hs = 5f * density
-        val topY = 5f
+        val topY = 5f * density
         handlePath.reset()
         handlePath.moveTo(playX, topY)
         handlePath.lineTo(playX - hs, topY + hs * 1.7f)
@@ -280,8 +288,8 @@ class TimelineView @JvmOverloads constructor(
             val x = controller.timeToX(beat.timestampMs.roundToLong())
             if (x in left..right) {
                 val amp = beat.confidence.coerceIn(0f, 1f)
-                val top = 8f
-                val bottom = h - 16f
+                val top = 8f * density
+                val bottom = h - 16f * density
                 val tickH = (bottom - top) * (0.3f + 0.7f * amp)
                 canvas.drawLine(x, bottom - tickH, x, bottom, beatPaint)
             }
@@ -361,7 +369,7 @@ class TimelineView @JvmOverloads constructor(
         primary: Int,
         wantThumbs: MutableList<Pair<String?, Long>>,
     ) {
-        val w = width.toFloat() - 4f
+        val w = width.toFloat() - trackRightMargin
         clipBorder.color = withAlpha(primary, 180)
         val selectedId = project.selectedClipId
         val videoUri = project.videoUri
@@ -485,7 +493,7 @@ class TimelineView @JvmOverloads constructor(
     }
 
     private fun drawBars(canvas: Canvas, left: Float, top: Float, trackH: Float, color: Int, bars: List<Pair<Long, Long>>) {
-        val w = width.toFloat() - 4f
+        val w = width.toFloat() - trackRightMargin
         trackPaint.color = withAlpha(color, 80)
         for ((startMs, endMs) in bars) {
             val x0 = controller.timeToX(startMs)
@@ -496,7 +504,7 @@ class TimelineView @JvmOverloads constructor(
     }
 
     private fun drawOverlayBars(canvas: Canvas, left: Float, top: Float, trackH: Float, color: Int, items: List<OverlayItem>) {
-        val w = width.toFloat() - 4f
+        val w = width.toFloat() - trackRightMargin
         clipBorder.color = withAlpha(color, 180)
         for (item in items) {
             val dragging = overlayDrag?.id == item.id
@@ -532,7 +540,7 @@ class TimelineView @JvmOverloads constructor(
     /** Titles for overlay/text bars, drawn after the playhead so the needle
      * never covers them. Mirrors the geometry used by [drawOverlayBars]. */
     private fun drawOverlayLabels(canvas: Canvas, left: Float, top: Float, trackH: Float, items: List<OverlayItem>) {
-        val w = width.toFloat() - 4f
+        val w = width.toFloat() - trackRightMargin
         for (item in items) {
             val dragging = overlayDrag?.id == item.id
             val startMs = if (dragging) overlayDrag!!.liveStart else item.startMs
@@ -540,12 +548,12 @@ class TimelineView @JvmOverloads constructor(
             val x0 = controller.timeToX(startMs)
             val x1 = controller.timeToX(endMs)
             if (x1 < left || x0 > w) continue
-            if (x1 - x0 <= 42f) continue
+            if (x1 - x0 <= 42f * density) continue
             textPaint.color = context.getColor(R.color.overlay_handle)
             textPaint.textSize = 18f * density
-            val maxChars = ((x1 - x0) / 22f).toInt().coerceIn(1, 10)
+            val maxChars = ((x1 - x0) / (22f * density)).toInt().coerceIn(1, 10)
             val label = item.label.ifBlank { item.type }
-            canvas.drawText(label.take(maxChars), x0 + 6f, top + trackH / 2f + 6f, textPaint)
+            canvas.drawText(label.take(maxChars), x0 + 6f * density, top + trackH / 2f + 6f * density, textPaint)
         }
     }
 
@@ -667,15 +675,31 @@ class TimelineView @JvmOverloads constructor(
         val step = pickRulerStep(controller.viewportMs)
         val start = (controller.visibleRange().first / step) * step
         var t = start
+        rulerPaint.strokeWidth = 1.5f * density
         rulerPaint.color = withAlpha(color, 160)
         labelPaint.textSize = 16f * density
         while (t <= controller.visibleRange().last) {
             val x = controller.timeToX(t)
             if (x in left..right) {
-                canvas.drawLine(x, y, x, y + 10f, rulerPaint)
+                canvas.drawLine(x, y, x, y + 10f * density, rulerPaint)
                 val label = formatTimeTick(t)
                 labelPaint.color = withAlpha(color, 200)
-                canvas.drawText(label, x + 2f, textY, labelPaint)
+                canvas.drawText(label, x + 2f * density, textY, labelPaint)
+            }
+            t += step
+        }
+    }
+
+    private fun drawTimeGrid(canvas: Canvas, left: Float, top: Float, bottom: Float) {
+        val step = pickRulerStep(controller.viewportMs)
+        val start = (controller.visibleRange().first / step) * step
+        var t = start
+        rulerPaint.strokeWidth = 1f * density
+        rulerPaint.color = withAlpha(context.getColor(R.color.border_default), 70)
+        while (t <= controller.visibleRange().last) {
+            val x = controller.timeToX(t)
+            if (x >= left && x <= width.toFloat()) {
+                canvas.drawLine(x, top, x, bottom, rulerPaint)
             }
             t += step
         }
@@ -778,7 +802,7 @@ class TimelineView @JvmOverloads constructor(
 
     private fun handleTap(x: Float, y: Float) {
         val now = System.currentTimeMillis()
-        val isDoubleTap = now - lastTapTime < 350L && abs(x - lastTapX) < 40f
+        val isDoubleTap = now - lastTapTime < 350L && abs(x - lastTapX) < 40f * density
         lastTapTime = now
         lastTapX = x
 
