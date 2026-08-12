@@ -1,7 +1,9 @@
 package dev.phonk.editor.ffmpeg
 
+import dev.phonk.editor.model.CanvasBackground
 import dev.phonk.editor.model.ClipSegment
 import dev.phonk.editor.model.ColorGrade
+import dev.phonk.editor.model.CropConfig
 import dev.phonk.editor.model.ExportConfig
 import dev.phonk.editor.model.GradeKeyframe
 import kotlinx.coroutines.Dispatchers
@@ -129,6 +131,13 @@ class FfmpegRenderer(private val engine: FFmpegEngine) : RenderCancellable {
         keyframesEnabled: Boolean = false,
         sourceWidth: Int = 0,
         sourceHeight: Int = 0,
+        canvasBackground: CanvasBackground = CanvasBackground(),
+        crop: CropConfig = CropConfig(),
+        masterVolume: Float = 1f,
+        audioFadeInMs: Long = 0L,
+        audioFadeOutMs: Long = 0L,
+        audioDucking: Float = 0f,
+        voiceOverUri: String? = null,
     ): RenderState = withContext(Dispatchers.IO) {
         if (!engine.available) {
             RenderState.Failed(
@@ -142,6 +151,8 @@ class FfmpegRenderer(private val engine: FFmpegEngine) : RenderCancellable {
                 input, output, segments, config, hasAudio, effects, hwEncode,
                 colorGrade, overlayRenders, transitionDurationMs, keyframes, keyframesEnabled,
                 sourceWidth, sourceHeight,
+                canvasBackground, crop, masterVolume, audioFadeInMs, audioFadeOutMs,
+                audioDucking, voiceOverUri,
             )
             cancelFlag.set(false)
             engine.run(args, cancelFlag) { seconds ->

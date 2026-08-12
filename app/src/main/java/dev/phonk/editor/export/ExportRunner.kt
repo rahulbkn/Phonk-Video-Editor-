@@ -160,6 +160,8 @@ class ExportRunner(
                     // stage 2: render to internal cache
                     val outFile = File(context.cacheDir, "phonk_export_${System.currentTimeMillis()}.mp4")
                     val overlayRenders = buildOverlayRenders(project, config)
+                    val voiceOverPath = project.voiceOverUri?.let { copyToCache(it, "voiceover") }
+                    val bgImagePath = project.canvasBackground.imageUri?.let { copyToCache(it, "canvasbg") }
                     // A cancel that arrived before the renderer was created must
                     // still prevent the render from ever starting.
                     if (cancelRequested) {
@@ -186,6 +188,13 @@ class ExportRunner(
                         keyframesEnabled = project.gradeKeyframesEnabled,
                         sourceWidth = project.videoWidth,
                         sourceHeight = project.videoHeight,
+                        canvasBackground = if (bgImagePath != null) project.canvasBackground.copy(imageUri = bgImagePath) else project.canvasBackground,
+                        crop = project.crop,
+                        masterVolume = project.volume,
+                        audioFadeInMs = project.fadeInMs,
+                        audioFadeOutMs = project.fadeOutMs,
+                        audioDucking = if (project.audioDucking) 0.7f else 0f,
+                        voiceOverUri = voiceOverPath,
                     )
                     if (cancelRequested) {
                         outFile.delete()
@@ -230,6 +239,25 @@ class ExportRunner(
         } ?: false
         if (!ok || copy.length() == 0L) error("Cannot read the source video (permission lost?)")
         return copy.absolutePath
+    }
+
+    /** Copies a content/absolute URI into a cache file for ffmpeg to read. */
+    private fun copyToCache(raw: String, tag: String): String? {
+        return runCatching {
+            val uri = Uri.parse(raw)
+            val ext = when {
+                raw.contains("mp3", true) || raw.contains("m4a", true) || raw.contains("aac", true) -> ".m4a"
+                raw.contains("png", true) -> ".png"
+                raw.contains("jpg", true) || raw.contains("jpeg", true) -> ".jpg"
+                else -> ".bin"
+            }
+            val f = File(context.cacheDir, "export_${tag}_${System.currentTimeMillis()}$ext")
+            val ok = context.contentResolver.openInputStream(uri)?.use { input ->
+                f.outputStream().use { out -> input.copyTo(out) }
+                true
+            } ?: false
+            if (ok && f.length() > 0L) f.absolutePath else null
+        }.getOrNull()
     }
 
     /**
@@ -289,6 +317,9 @@ class ExportRunner(
                 x = ov.x, y = ov.y, scaleX = ov.scaleX, scaleY = ov.scaleY,
                 rotation = ov.rotation, opacity = ov.opacity, zIndex = ov.zIndex,
                 keyframes = ov.keyframes,
+                chromaKeyColor = ov.chromaKeyColor?.toInt(),
+                chromaKeySimilarity = ov.chromaKeySimilarity,
+                mask = ov.mask,
             )
         }
         return out
