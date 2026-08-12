@@ -60,6 +60,16 @@ data class PhonkProject(
     val transitionDurationMs: Long = 400L,
     val textLayers: List<TextLayer> = emptyList(),
     val overlays: List<OverlayLayer> = emptyList(),
+    /** Subtitle tracks (SRT/WebVTT), rendered under the image/text overlays. */
+    val subtitles: List<SubtitleTrack> = emptyList(),
+    /** Canvas background behind the letterboxed video. */
+    val canvasBackground: CanvasBackground = CanvasBackground(),
+    /** Custom crop applied last in the render chain. */
+    val crop: CropConfig = CropConfig(),
+    /** Audio ducking: background track lowers when the main audio peaks. */
+    val audioDucking: Boolean = false,
+    /** Voice-over / background music track URI mixed under the video audio. */
+    val voiceOverUri: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 ) {
@@ -96,6 +106,8 @@ data class ClipSegment(
     /** Playback speed multiplier (0.25..4). Source span is preserved; destination
      *  duration reflects the speed so the timeline stays accurate. */
     val speed: Float = 1f,
+    /** Playback reversed within its source span. */
+    val reversed: Boolean = false,
     /** Transition applied at the start of this clip (next edge), null = cut. */
     val transition: String? = null,
 ) {
@@ -195,6 +207,13 @@ data class OverlayLayer(
     override val visible: Boolean = true,
     override val locked: Boolean = false,
     override val keyframes: List<OverlayKeyframe> = emptyList(),
+    /** Chroma key: removes [chromaKeyColor] from this overlay (green screen). */
+    val chromaKeyColor: Long? = null,
+    val chromaKeySimilarity: Float = 0.12f,
+    /** Mask applied to this overlay (rect/ellipse/heart/star ...). */
+    val mask: MaskConfig = MaskConfig(),
+    /** Loop the source media while the overlay is visible. */
+    val loop: Boolean = false,
 ) : OverlayItem {
     override val type: String get() = kind
 }
@@ -311,6 +330,7 @@ class ProjectCodec {
                 .put("dropTransition", c.dropTransition)
                 .put("dropSourceMs", c.dropSourceMs)
                 .put("speed", c.speed.toDouble())
+                .put("reversed", c.reversed)
                 .put("transition", c.transition))
         }})
         o.put("effects", JSONArray().also { arr -> p.effects.forEach { e ->
@@ -399,8 +419,45 @@ class ProjectCodec {
                 .put("zIndex", ov.zIndex)
                 .put("visible", ov.visible)
                 .put("locked", ov.locked)
-                .put("keyframes", overlayKeyframesJson(ov.keyframes)))
+                .put("keyframes", overlayKeyframesJson(ov.keyframes))
+                .put("chromaKeyColor", ov.chromaKeyColor)
+                .put("chromaKeySimilarity", ov.chromaKeySimilarity.toDouble())
+                .put("mask", maskJson(ov.mask))
+                .put("loop", ov.loop))
         }})
+        o.put("subtitles", JSONArray().also { arr -> p.subtitles.forEach { s ->
+            arr.put(JSONObject()
+                .put("id", s.id)
+                .put("fileName", s.fileName)
+                .put("fontSize", s.fontSize.toDouble())
+                .put("colorArgb", s.colorArgb)
+                .put("backgroundColorArgb", s.backgroundColorArgb)
+                .put("x", s.x.toDouble())
+                .put("y", s.y.toDouble())
+                .put("visible", s.visible)
+                .put("cues", JSONArray().also { cues ->
+                    s.cues.forEach { c ->
+                        cues.put(JSONObject()
+                            .put("startMs", c.startMs)
+                            .put("endMs", c.endMs)
+                            .put("text", c.text))
+                    }
+                }))
+        }})
+        o.put("canvasBackground", JSONObject()
+            .put("type", p.canvasBackground.type.wire)
+            .put("colorArgb", p.canvasBackground.colorArgb)
+            .put("imageUri", p.canvasBackground.imageUri)
+            .put("blurRadius", p.canvasBackground.blurRadius.toDouble()))
+        o.put("crop", JSONObject()
+            .put("enabled", p.crop.enabled)
+            .put("xFraction", p.crop.xFraction.toDouble())
+            .put("yFraction", p.crop.yFraction.toDouble())
+            .put("wFraction", p.crop.wFraction.toDouble())
+            .put("hFraction", p.crop.hFraction.toDouble())
+            .put("aspectRatio", p.crop.aspectRatio))
+        o.put("audioDucking", p.audioDucking)
+        o.put("voiceOverUri", p.voiceOverUri)
         val ex = JSONObject()
         ex.put("resolution", p.export.resolution.name)
         ex.put("fps", p.export.fps.fps)
@@ -467,6 +524,12 @@ class ProjectCodec {
             transitionDurationMs = o.optLong("transitionDurationMs", 400L),
             textLayers = parseTextLayers(o.optJSONArray("textLayers")),
             overlays = parseOverlays(o.optJSONArray("overlays")),
+            subtitles = parseSubtitles(o.optJSONArray("subtitles")),
+            canvasBackground = parseCanvasBackground(o.optJSONObject("canvasBackground")),
+            crop = parseCrop(o.optJSONObject("crop")),
+            audioDucking = o.optBoolean("audioDucking", false),
+            voiceOverUri = if (o.has("voiceOverUri") && !o.isNull("voiceOverUri"))
+                o.optString("voiceOverUri", null) else null,
             createdAt = o.optLong("createdAt", System.currentTimeMillis()),
             updatedAt = o.optLong("updatedAt", System.currentTimeMillis()),
         )
@@ -541,6 +604,7 @@ class ProjectCodec {
                         dropSourceMs = if (c.has("dropSourceMs") && !c.isNull("dropSourceMs"))
                             c.optLong("dropSourceMs", 0L) else null,
                         speed = c.optDouble("speed", 1.0).toFloat(),
+                        reversed = c.optBoolean("reversed", false),
                         transition = if (c.has("transition") && !c.isNull("transition"))
                             c.optString("transition", null) else null,
                     )
@@ -654,6 +718,11 @@ class ProjectCodec {
                         visible = ov.optBoolean("visible", true),
                         locked = ov.optBoolean("locked", false),
                         keyframes = parseOverlayKeyframes(ov.optJSONArray("keyframes")),
+                        chromaKeyColor = if (ov.has("chromaKeyColor") && !ov.isNull("chromaKeyColor"))
+                            ov.optLong("chromaKeyColor", 0L) else null,
+                        chromaKeySimilarity = ov.optDouble("chromaKeySimilarity", 0.12).toFloat(),
+                        mask = parseMask(ov.optJSONObject("mask")),
+                        loop = ov.optBoolean("loop", false),
                     )
                 )
             }
@@ -674,6 +743,16 @@ class ProjectCodec {
             }
         }
 
+    private fun maskJson(mask: MaskConfig): JSONObject = JSONObject()
+        .put("shape", mask.shape.wire)
+        .put("x", mask.x.toDouble())
+        .put("y", mask.y.toDouble())
+        .put("width", mask.width.toDouble())
+        .put("height", mask.height.toDouble())
+        .put("rotation", mask.rotation.toDouble())
+        .put("inverted", mask.inverted)
+        .put("feather", mask.feather.toDouble())
+
     private fun parseOverlayKeyframes(arr: JSONArray?): List<OverlayKeyframe> {
         if (arr == null) return emptyList()
         return buildList {
@@ -692,6 +771,79 @@ class ProjectCodec {
                 )
             }
         }
+    }
+
+    private fun parseMask(o: JSONObject?): MaskConfig {
+        if (o == null) return MaskConfig()
+        return MaskConfig(
+            shape = MaskShape.fromWire(o.optString("shape", "none")),
+            x = o.optDouble("x", 0.5).toFloat(),
+            y = o.optDouble("y", 0.5).toFloat(),
+            width = o.optDouble("width", 0.5).toFloat(),
+            height = o.optDouble("height", 0.5).toFloat(),
+            rotation = o.optDouble("rotation", 0.0).toFloat(),
+            inverted = o.optBoolean("inverted", false),
+            feather = o.optDouble("feather", 0.0).toFloat(),
+        )
+    }
+
+    private fun parseSubtitles(arr: JSONArray?): List<SubtitleTrack> {
+        if (arr == null) return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val s = arr.optJSONObject(i) ?: continue
+                val cues = buildList {
+                    val cueArr = s.optJSONArray("cues") ?: continue
+                    for (j in 0 until cueArr.length()) {
+                        val c = cueArr.optJSONObject(j) ?: continue
+                        add(
+                            SubtitleCue(
+                                startMs = c.optLong("startMs", 0L),
+                                endMs = c.optLong("endMs", 0L),
+                                text = c.optString("text", ""),
+                            )
+                        )
+                    }
+                }
+                add(
+                    SubtitleTrack(
+                        id = s.optString("id", ""),
+                        fileName = s.optString("fileName", ""),
+                        cues = cues,
+                        fontSize = s.optDouble("fontSize", 36.0).toFloat(),
+                        colorArgb = s.optLong("colorArgb", 0xFFFFFFFFL),
+                        backgroundColorArgb = s.optLong("backgroundColorArgb", 0x80000000L),
+                        x = s.optDouble("x", 0.5).toFloat(),
+                        y = s.optDouble("y", 0.92).toFloat(),
+                        visible = s.optBoolean("visible", true),
+                    )
+                )
+            }
+        }
+    }
+
+    private fun parseCanvasBackground(o: JSONObject?): CanvasBackground {
+        if (o == null) return CanvasBackground()
+        return CanvasBackground(
+            type = BackgroundType.fromWire(o.optString("type", "none")),
+            colorArgb = o.optLong("colorArgb", 0xFF000000L),
+            imageUri = if (o.has("imageUri") && !o.isNull("imageUri"))
+                o.optString("imageUri", null) else null,
+            blurRadius = o.optDouble("blurRadius", 25.0).toFloat(),
+        )
+    }
+
+    private fun parseCrop(o: JSONObject?): CropConfig {
+        if (o == null) return CropConfig()
+        return CropConfig(
+            enabled = o.optBoolean("enabled", false),
+            xFraction = o.optDouble("xFraction", 0.0).toFloat(),
+            yFraction = o.optDouble("yFraction", 0.0).toFloat(),
+            wFraction = o.optDouble("wFraction", 1.0).toFloat(),
+            hFraction = o.optDouble("hFraction", 1.0).toFloat(),
+            aspectRatio = if (o.has("aspectRatio") && !o.isNull("aspectRatio"))
+                o.optString("aspectRatio", null) else null,
+        )
     }
 
     private fun parseExport(o: JSONObject?): ExportConfig {

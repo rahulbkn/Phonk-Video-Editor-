@@ -47,22 +47,28 @@ import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Redo
+import androidx.compose.material.icons.filled.RemoveRedEye
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.TextFormat
 import androidx.compose.material.icons.filled.Tune
@@ -103,6 +109,8 @@ import dev.phonk.editor.editor.CutPattern
 import dev.phonk.editor.export.ExportDialog
 import dev.phonk.editor.export.ExportState
 import dev.phonk.editor.model.ColorGrade
+import dev.phonk.editor.model.CanvasBackground
+import dev.phonk.editor.model.CropConfig
 import dev.phonk.editor.model.EffectKind
 import dev.phonk.editor.model.ExportConfig
 import dev.phonk.editor.model.OverlayItem
@@ -122,15 +130,21 @@ import dev.phonk.editor.ui.components.PhonkSlider
 import dev.phonk.editor.ui.components.SectionHeader
 import dev.phonk.editor.ui.editor.EditorPreview
 import dev.phonk.editor.ui.editor.TextEditDialog
+import dev.phonk.editor.ui.editor.panels.AudioMixPanel
 import dev.phonk.editor.ui.editor.panels.AudioTrackPanel
+import dev.phonk.editor.ui.editor.panels.BackgroundPanel
+import dev.phonk.editor.ui.editor.panels.CropPanel
 import dev.phonk.editor.ui.editor.panels.EffectsPanel
 import dev.phonk.editor.ui.editor.panels.FiltersPanel
 import dev.phonk.editor.ui.editor.panels.MediaPanel
 import dev.phonk.editor.ui.editor.panels.MorePanel
+import dev.phonk.editor.ui.editor.panels.OverlayKeyPanel
 import dev.phonk.editor.ui.editor.panels.OverlayPanel
 import dev.phonk.editor.ui.editor.panels.RatioPanel
+import dev.phonk.editor.ui.editor.panels.ReversePanel
 import dev.phonk.editor.ui.editor.panels.SpeedPreset
 import dev.phonk.editor.ui.editor.panels.StickerPanel
+import dev.phonk.editor.ui.editor.panels.SubtitlePanel
 import dev.phonk.editor.ui.editor.panels.TextPanel
 import dev.phonk.editor.ui.editor.panels.TransitionsPanel
 import dev.phonk.editor.util.TimeUtils.formatClock
@@ -187,6 +201,12 @@ private fun contextToolIcon(id: String): ImageVector = when (id) {
     "ratio" -> Icons.Filled.AspectRatio
     "media" -> Icons.Filled.VideoLibrary
     "edit_text" -> Icons.Filled.Edit
+    "background" -> Icons.Filled.Image
+    "crop" -> Icons.Filled.Crop
+    "reverse" -> Icons.Filled.Replay
+    "subtitles" -> Icons.Filled.Subtitles
+    "chroma" -> Icons.Filled.RemoveRedEye
+    "voiceover" -> Icons.Filled.Mic
     else -> Icons.Filled.Info
 }
 
@@ -204,6 +224,7 @@ private val AUDIO_CONTEXT_TOOLS = listOf(
     ContextTool("fade_out", "Fade Out", Icons.Filled.VolumeDown),
     ContextTool("pitch", "Pitch", Icons.Filled.Tune),
     ContextTool("beat", "Beat", Icons.Filled.MusicNote),
+    ContextTool("voiceover", "Voice", Icons.Filled.Mic),
 )
 
 private val TEXT_CONTEXT_TOOLS = listOf(
@@ -227,6 +248,11 @@ private val EFFECTS_CONTEXT_TOOLS = listOf(
 
 private val MORE_CONTEXT_TOOLS = listOf(
     ContextTool("ratio", "Ratio", Icons.Filled.AspectRatio),
+    ContextTool("background", "Background", Icons.Filled.Image),
+    ContextTool("crop", "Crop", Icons.Filled.Crop),
+    ContextTool("reverse", "Reverse", Icons.Filled.Replay),
+    ContextTool("subtitles", "Subtitles", Icons.Filled.Subtitles),
+    ContextTool("chroma", "Chroma/Mask", Icons.Filled.RemoveRedEye),
     ContextTool("beat", "Beat", Icons.Filled.MusicNote),
     ContextTool("transition", "Transition", Icons.Filled.Animation),
     ContextTool("media", "Media", Icons.Filled.VideoLibrary),
@@ -298,6 +324,36 @@ fun EditorScreen(projectId: String, onBack: () -> Unit) {
         if (uri != null) {
             runCatching { appCtx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             val s = vm.playheadMs.value; vm.addOverlay("Image", queryName(appCtx.contentResolver, uri), uri.toString(), s, s + 3000)
+        }
+    }
+    val subtitlePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { appCtx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            runCatching {
+                val name = queryName(appCtx.contentResolver, uri)
+                val ins = appCtx.contentResolver.openInputStream(uri)
+                if (ins == null) {
+                    message = "Could not open $name"
+                } else {
+                    ins.use { stream ->
+                        val cues = dev.phonk.editor.model.SubtitleParser.parse(stream)
+                        if (cues.isEmpty()) message = "No captions found in $name"
+                        else vm.addSubtitleTrack(name, cues)
+                    }
+                }
+            }.onFailure { message = "Subtitle import failed" }
+        }
+    }
+    val voiceOverPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { appCtx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            vm.setVoiceOverUri(uri.toString())
+        }
+    }
+    val backgroundPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { appCtx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            vm.setCanvasBackgroundImage(uri.toString())
         }
     }
 
@@ -391,6 +447,9 @@ fun EditorScreen(projectId: String, onBack: () -> Unit) {
                             onAspectSelected = { selectedAspect = it },
                             showTextDialog = { showTextDialog = it },
                             imagePickerLaunch = { imagePicker.launch(arrayOf("image/*")) },
+                            subtitlePickerLaunch = { subtitlePicker.launch(arrayOf("text/*", "application/*")) },
+                            voiceOverPickerLaunch = { voiceOverPicker.launch(arrayOf("audio/*")) },
+                            backgroundPickerLaunch = { backgroundPicker.launch(arrayOf("image/*")) },
                             analysis = analysis,
                             selectedOverlayId = selectedOverlayId,
                             selectedClip = vm.selectedClip(),
@@ -570,6 +629,9 @@ private fun ToolPanel(
     onAspectSelected: (String) -> Unit,
     showTextDialog: (Boolean) -> Unit,
     imagePickerLaunch: () -> Unit,
+    subtitlePickerLaunch: () -> Unit,
+    voiceOverPickerLaunch: () -> Unit,
+    backgroundPickerLaunch: () -> Unit,
     analysis: dev.phonk.editor.model.AnalysisResult?,
     selectedOverlayId: String?,
     selectedClip: dev.phonk.editor.model.ClipSegment?,
@@ -616,6 +678,32 @@ private fun ToolPanel(
                 "adjust" -> GradeSlidersInline(grade = p?.colorGrade() ?: ColorGrade(), onGrade = { param, v -> vm.setGrade(param, v) }, onResetAll = { vm.resetGrade() })
                 "ratio" -> RatioPanel(selectedAspect = selectedAspect, onAspectSelected = onAspectSelected)
                 "media" -> MediaPanel(onImportVideo = imagePickerLaunch, onImportAudio = imagePickerLaunch, onImportPhoto = imagePickerLaunch)
+                "background" -> BackgroundPanel(
+                    background = p?.canvasBackground ?: CanvasBackground(),
+                    onType = { vm.setCanvasBackgroundType(it) },
+                    onColor = { vm.setCanvasBackgroundColor(it) },
+                    onPickImage = backgroundPickerLaunch,
+                )
+                "crop" -> CropPanel(crop = p?.crop ?: CropConfig(), onCrop = { e, x, y, w, h -> vm.setCrop(e, x, y, w, h) })
+                "reverse" -> ReversePanel(reversed = selectedClip?.reversed == true, onReversed = { vm.setClipReversed(it) })
+                "subtitles" -> SubtitlePanel(
+                    tracks = p?.subtitles ?: emptyList(),
+                    onImport = subtitlePickerLaunch,
+                    onToggleTrack = { id, vis -> vm.setSubtitleVisible(id, vis) },
+                    onClear = { vm.clearSubtitles() },
+                )
+                "chroma" -> OverlayKeyPanel(
+                    layer = selectedOverlayId?.let { vm.overlayById(it) as? OverlayLayer },
+                    onChroma = { color, sim -> val id = selectedOverlayId ?: return@OverlayKeyPanel; vm.setOverlayChromaKey(id, color, sim) },
+                    onMask = { mask -> val id = selectedOverlayId ?: return@OverlayKeyPanel; vm.setOverlayMask(id, mask) },
+                )
+                "voiceover" -> AudioMixPanel(
+                    ducking = p?.audioDucking == true,
+                    onDucking = { vm.setAudioDucking(it) },
+                    hasVoiceOver = p?.voiceOverUri != null,
+                    onPickVoiceOver = voiceOverPickerLaunch,
+                    onClearVoiceOver = { vm.setVoiceOverUri(null) },
+                )
             }
         }
     }

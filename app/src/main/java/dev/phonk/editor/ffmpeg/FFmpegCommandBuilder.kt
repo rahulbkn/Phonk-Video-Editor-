@@ -1,10 +1,15 @@
 package dev.phonk.editor.ffmpeg
 
+import dev.phonk.editor.model.BackgroundType
+import dev.phonk.editor.model.CanvasBackground
 import dev.phonk.editor.model.ClipSegment
 import dev.phonk.editor.model.ColorGrade
+import dev.phonk.editor.model.CropConfig
 import dev.phonk.editor.model.EffectKind
 import dev.phonk.editor.model.ExportConfig
 import dev.phonk.editor.model.GradeKeyframe
+import dev.phonk.editor.model.MaskConfig
+import dev.phonk.editor.model.MaskShape
 import dev.phonk.editor.model.OverlayFx
 import dev.phonk.editor.model.OverlayItem
 import dev.phonk.editor.model.OverlayKeyframe
@@ -54,6 +59,9 @@ data class OverlayRender(
     override val opacity: Float,
     override val zIndex: Int,
     override val keyframes: List<OverlayKeyframe> = emptyList(),
+    val chromaKeyColor: Int? = null,
+    val chromaKeySimilarity: Float = 0.3f,
+    val mask: MaskConfig = MaskConfig(),
 ) : OverlayItem {
     override val visible: Boolean get() = true
     override val locked: Boolean get() = false
@@ -111,6 +119,13 @@ object FFmpegCommandBuilder {
         keyframesEnabled: Boolean = false,
         sourceWidth: Int = 0,
         sourceHeight: Int = 0,
+        canvasBackground: CanvasBackground = CanvasBackground(),
+        crop: CropConfig = CropConfig(),
+        masterVolume: Float = 1f,
+        audioFadeInMs: Long = 0L,
+        audioFadeOutMs: Long = 0L,
+        audioDucking: Float = 0f,
+        voiceOverUri: String? = null,
     ): List<String> {
         if (segments.isEmpty()) {
             return listOf("-y", "-f", "lavfi", "-i", "color=c=black:s=16x16:d=0.1",
@@ -125,6 +140,15 @@ object FFmpegCommandBuilder {
         }
         args.add("-i")
         args.add(input)
+        val bgImage = if (canvasBackground.type == BackgroundType.IMAGE &&
+            !canvasBackground.imageUri.isNullOrBlank()
+        ) canvasBackground.imageUri else null
+        if (bgImage != null) {
+            args.add("-loop")
+            args.add("1")
+            args.add("-i")
+            args.add(bgImage)
+        }
         val orderedRenders = orderedOverlays(overlayRenders)
         for (r in orderedRenders) {
             args.add("-loop")
@@ -132,11 +156,21 @@ object FFmpegCommandBuilder {
             args.add("-i")
             args.add(r.file)
         }
+        val voiceOn = !voiceOverUri.isNullOrBlank()
+        if (voiceOn) {
+            args.add("-i")
+            args.add(voiceOverUri)
+        }
         args.add("-filter_complex")
-        args.add(buildFilterGraph(segments, config, hasAudio, effects, colorGrade, orderedRenders, transitionDurationMs, keyframes, keyframesEnabled, sourceWidth, sourceHeight))
+        args.add(buildFilterGraph(
+            segments, config, hasAudio, effects, colorGrade, orderedRenders,
+            transitionDurationMs, keyframes, keyframesEnabled, sourceWidth, sourceHeight,
+            canvasBackground, crop, masterVolume, audioFadeInMs, audioFadeOutMs, audioDucking,
+            voiceOverUri,
+        ))
         args.add("-map")
         args.add("[outv]")
-        if (hasAudio) {
+        if (hasAudio || voiceOn) {
             args.add("-map")
             args.add("[outa]")
         }
@@ -179,6 +213,13 @@ object FFmpegCommandBuilder {
         keyframesEnabled: Boolean = false,
         sourceWidth: Int = 0,
         sourceHeight: Int = 0,
+        canvasBackground: CanvasBackground = CanvasBackground(),
+        crop: CropConfig = CropConfig(),
+        masterVolume: Float = 1f,
+        audioFadeInMs: Long = 0L,
+        audioFadeOutMs: Long = 0L,
+        audioDucking: Float = 0f,
+        voiceOverUri: String? = null,
     ): String {
         val sb = StringBuilder()
         val w = config.resolution.width
@@ -190,6 +231,9 @@ object FFmpegCommandBuilder {
             val d = e - s
             sb.append("[0:v]trim=start=").append(fmt(s)).append(":duration=").append(fmt(d))
                 .append(",setpts=PTS-STARTPTS")
+            if (seg.reversed) {
+                sb.append(",reverse,setpts=PTS-STARTPTS")
+            }
             if (seg.speed != 1f && seg.speed > 0f) {
                 sb.append(",setpts=PTS/").append(fmt(seg.speed.toDouble()))
             }
@@ -202,6 +246,9 @@ object FFmpegCommandBuilder {
                 val d = e - s
                 sb.append("[0:a]atrim=start=").append(fmt(s)).append(":end=").append(fmt(e))
                     .append(",asetpts=PTS-STARTPTS")
+                if (seg.reversed) {
+                    sb.append(",areverse,asetpts=PTS-STARTPTS")
+                }
                 if (seg.speed != 1f && seg.speed > 0f) {
                     // atempo supports [0.5, 100]; normalize into that range.
                     val atempos = atempoChain(seg.speed)
@@ -215,15 +262,9 @@ object FFmpegCommandBuilder {
             .append("concat=n=").append(n).append(":v=1:a=0[base];")
         if (hasAudio) {
             sb.append(segments.indices.joinToString("") { "[a$it]" })
-                .append("concat=n=").append(n).append(":v=0:a=1[outa];")
+                .append("concat=n=").append(n).append(":v=0:a=1[mixa];")
         }
-        sb.append("[base]scale=").append(w).append(':').append(h)
-            .append(":force_original_aspect_ratio=decrease,pad=").append(w).append(':').append(h)
-            .append(":(ow-iw)/2:(oh-ih)/2,setsar=1,fps=").append(config.fps.fps)
-            // Force software frames before grade/effect/overlay filters: with
-            // mediacodec hwaccel the decoded stream is hardware-backed and the
-            // `overlay` (and several other) filters reject hw frames.
-            .append(",format=yuv420p")
+        appendBackground(sb, canvasBackground, w, h, config.fps.fps, segments)
         val windows = gradeWindows(colorGrade, keyframes, keyframesEnabled, segments)
         windows.forEach { win ->
             val enable = if (windowsUseEnable(win, segments)) "between(t,${fmt(win.startSec)},${fmt(win.endSec)})" else null
@@ -234,8 +275,65 @@ object FFmpegCommandBuilder {
         appendTransitions(sb, segments, transitionDurationMs)
         val ordered = orderedOverlays(overlayRenders)
         val totalMs = segments.maxOfOrNull { it.destEndMs } ?: 0L
-        appendOverlayGraphs(sb, ordered, w, h, totalMs, sourceWidth, sourceHeight)
+        val voiceOn = !voiceOverUri.isNullOrBlank()
+        val bgOffset = if (canvasBackground.type == BackgroundType.IMAGE &&
+            !canvasBackground.imageUri.isNullOrBlank()
+        ) 1 else 0
+        val voiceIndex = 1 + bgOffset + ordered.size
+        appendOverlayGraphs(sb, ordered, w, h, totalMs, sourceWidth, sourceHeight, crop, bgOffset)
+        appendAudioTail(sb, segments, hasAudio, voiceOverUri, masterVolume, audioFadeInMs, audioFadeOutMs, audioDucking, voiceIndex)
         return sb.toString()
+    }
+
+    /**
+     * Background handling. NONE: classic black letterbox pad. COLOR: pad with
+     * the requested ARGB. BLUR: fill the canvas with a heavily blurred copy of
+     * the video then composite the letterboxed content on top. IMAGE: an extra
+     * [1:v] input (added in [buildClip] before the overlay inputs) fills the
+     * canvas behind the letterboxed video. The scale/pad/fps/setsar chain is
+     * always emitted so the downstream grade/effect/overlay chain sees a
+     * canvas-size yuv420p stream exactly as before.
+     */
+    private fun appendBackground(
+        sb: StringBuilder,
+        bg: CanvasBackground,
+        w: Int,
+        h: Int,
+        fps: Int,
+        segments: List<ClipSegment>,
+    ) {
+        val base = "base"
+        val padColor = when {
+            bg.type == BackgroundType.COLOR -> colorHex(bg.colorArgb)
+            else -> null
+        }
+        val padOpt = if (padColor != null) ":color=$padColor" else ""
+        val scalePad = "[$base]scale=$w:$h:force_original_aspect_ratio=decrease," +
+            "pad=$w:$h:(ow-iw)/2:(oh-ih)/2$padOpt,setsar=1,fps=$fps,format=yuv420p"
+        when (bg.type) {
+            BackgroundType.BLUR -> {
+                val r = (bg.blurRadius * 0.4).coerceIn(2.0, 60.0)
+                // [base] -> blurred full-bleed backdrop + letterboxed content copy
+                sb.append("[$base]split[blursrc][content0];")
+                sb.append("[blursrc]scale=$w:$h:force_original_aspect_ratio=increase,")
+                    .append("crop=$w:$h,boxblur=luma_radius=").append(fmt(r))
+                    .append(":luma_power=2[blurbg];")
+                sb.append("[content0]scale=$w:$h:force_original_aspect_ratio=decrease,")
+                    .append("pad=$w:$h:(ow-iw)/2:(oh-ih)/2,setsar=1[content];")
+                sb.append("[blurbg][content]")
+                    .append("overlay=0:0,setsar=1,fps=$fps,format=yuv420p")
+            }
+            BackgroundType.IMAGE -> {
+                // [1:v] is the background image looped input; scale to fill then
+                // place the letterboxed content on top of it.
+                sb.append("[1:v]scale=$w:$h:force_original_aspect_ratio=increase,")
+                    .append("crop=$w:$h,setsar=1[bgimg];")
+                sb.append("[$base]scale=$w:$h:force_original_aspect_ratio=decrease,")
+                    .append("pad=$w:$h:(ow-iw)/2:(oh-ih)/2,setsar=1[content];")
+                sb.append("[bgimg][content]overlay=0:0,setsar=1,fps=$fps,format=yuv420p")
+            }
+            else -> sb.append(scalePad)
+        }
     }
 
     /**
@@ -471,7 +569,7 @@ object FFmpegCommandBuilder {
      * then composited at the normalized centre minus half the rotated bbox.
      * With no composites the base stream is labelled [outv] directly.
      */
-    private fun appendOverlayGraphs(sb: StringBuilder, renders: List<OverlayRender>, w: Int, h: Int, totalMs: Long, sourceWidth: Int = 0, sourceHeight: Int = 0) {
+    private fun appendOverlayGraphs(sb: StringBuilder, renders: List<OverlayRender>, w: Int, h: Int, totalMs: Long, sourceWidth: Int = 0, sourceHeight: Int = 0, crop: CropConfig = CropConfig(), bgOffset: Int = 0) {
         // The base video is scaled into the w×h canvas with aspect preserved and
         // letterboxed ([base]scale=..:force_original_aspect_ratio=decrease,pad=..).
         // Overlay coordinates are RELATIVE TO THE VIDEO CONTENT rect, matching
@@ -490,7 +588,11 @@ object FFmpegCommandBuilder {
             overlayWindows(render, totalMs).forEach { composites += k to it }
         }
         if (composites.isEmpty()) {
-            sb.append("[outv]")
+            if (crop.enabled) {
+                appendCrop(sb, crop, w, h, vw.toDouble(), vh.toDouble(), vx, vy, null)
+            } else {
+                sb.append("[outv]")
+            }
             return
         }
         // Label the base/scale/grade/effect chain (which buildFilterGraph left
@@ -502,10 +604,12 @@ object FFmpegCommandBuilder {
         var prev = "styled"
         composites.forEachIndexed { idx, (k, win) ->
             val render = renders[k]
-            val next = if (idx == composites.lastIndex) "outv" else "p${idx + 1}"
+            val next = if (idx == composites.lastIndex) {
+                if (crop.enabled) "precrop" else "outv"
+            } else "p${idx + 1}"
             val sw2 = render.baseW * win.fx.scaleX
             val sh2 = render.baseH * win.fx.scaleY
-            sb.append(";[${k + 1}:v]format=rgba,scale=").append(render.baseW).append(':').append(render.baseH)
+            sb.append(";[${bgOffset + k + 1}:v]format=rgba,scale=").append(render.baseW).append(':').append(render.baseH)
                 .append(":force_original_aspect_ratio=decrease,pad=").append(render.baseW).append(':').append(render.baseH)
                 .append(":(ow-iw)/2:(oh-ih)/2:color=black@0,scale=")
                 .append(sw2.roundToInt().coerceAtLeast(1)).append(':').append(sh2.roundToInt().coerceAtLeast(1))
@@ -516,6 +620,21 @@ object FFmpegCommandBuilder {
             val op = win.fx.opacity.coerceIn(0f, 1f)
             if (op < 0.999f) {
                 sb.append(",colorchannelmixer=aa=").append(fmt(op.toDouble()))
+            }
+            // Chroma key: punch out the key colour from the overlay content. The
+            // key must run after the base scale but before the mask so a colour
+            // key + shape mask can both apply (mask alpha wins when combined).
+            val chroma = render.chromaKeyColor
+            if (chroma != null) {
+                sb.append(",colorkey=color=").append(colorHex(chroma.toLong()))
+                    .append(":similarity=").append(fmt((render.chromaKeySimilarity.coerceIn(0f, 1f) * 0.3).toDouble()))
+                    .append(":blend=0.1")
+            }
+            // Shape mask: drive the alpha channel with a geq expression so the
+            // overlay is visible only inside the mask region (inverted/flip).
+            val mask = render.mask
+            if (mask.isActive) {
+                appendMaskAlpha(sb, mask)
             }
             sb.append("[q").append(idx).append("]")
             // Position the centre at (vx + fx.x * vw, vy + fx.y * vh), i.e.
@@ -535,6 +654,161 @@ object FFmpegCommandBuilder {
                 .append(fmt(win.startSec)).append(",").append(fmt(win.endSec)).append(")'[")
                 .append(next).append("]")
             prev = next
+        }
+        if (crop.enabled) {
+            appendCrop(sb, crop, w, h, vw.toDouble(), vh.toDouble(), vx, vy, "precrop")
+        }
+    }
+
+    /** Custom crop region relative to the letterboxed content rect. */
+    private fun appendCrop(
+        sb: StringBuilder,
+        crop: CropConfig,
+        w: Int,
+        h: Int,
+        vw: Double,
+        vh: Double,
+        vx: Double,
+        vy: Double,
+        fromLabel: String?,
+    ) {
+        if (!crop.enabled) return
+        // Fall back to the full canvas when source dims are unknown so a crop
+        // configured before the source is probed cannot collapse to 0 pixels.
+        val cwBasis = if (vw > 0) vw else w.toDouble()
+        val chBasis = if (vh > 0) vh else h.toDouble()
+        val cxBasis = if (vw > 0) vx else 0.0
+        val cyBasis = if (vh > 0) vy else 0.0
+        val cw = (crop.wFraction.coerceIn(0.01f, 1f) * cwBasis).roundToInt().coerceAtLeast(2)
+        val ch = (crop.hFraction.coerceIn(0.01f, 1f) * chBasis).roundToInt().coerceAtLeast(2)
+        val cx = (cxBasis + crop.xFraction.coerceIn(0f, 1f) * cwBasis).roundToInt()
+        val cy = (cyBasis + crop.yFraction.coerceIn(0f, 1f) * chBasis).roundToInt()
+        if (fromLabel != null) {
+            sb.append(";[").append(fromLabel).append("]")
+        } else {
+            sb.append(",")
+        }
+        sb.append("crop=").append(cw).append(':').append(ch).append(':').append(cx).append(':').append(cy)
+            .append("[outv]")
+    }
+
+    /**
+     * Emits a geq expression that drives the overlay's alpha channel so only
+     * the masked region is visible. Every shape uses normalized coordinates
+     * (X,Y in pixels, W,H the frame size) so the mask tracks the overlay's own
+     * box (it is applied after the overlay's scale/rotate stage). Inverted
+     * masks flip the region. Feather softens the edge by blending toward 0.
+     */
+    private fun appendMaskAlpha(sb: StringBuilder, mask: MaskConfig) {
+        val x0 = mask.x - mask.width / 2f
+        val x1 = mask.x + mask.width / 2f
+        val y0 = mask.y - mask.height / 2f
+        val y1 = mask.y + mask.height / 2f
+        val cx = mask.x
+        val cy = mask.y
+        val rw = mask.width / 2f
+        val rh = mask.height / 2f
+        // ffmpeg's expression parser rejects the < / <= operators inside if();
+        // use the function forms (lt/between) exclusively.
+        val expr: String = when (mask.shape) {
+            MaskShape.RECTANGLE ->
+                "if(between(X/W,$x0,$x1)*between(Y/H,$y0,$y1),255,0)"
+            MaskShape.ELLIPSE ->
+                "if(lt(pow((X/W-$cx)/$rw,2)+pow((Y/H-$cy)/$rh,2),1),255,0)"
+            MaskShape.SPLIT ->
+                "if(lt(X/W+Y/H,${mask.x + mask.height / 2f}),255,0)"
+            MaskShape.SHUTTER -> {
+                val lines = (mask.height * 10).roundToInt().coerceAtLeast(2)
+                "if(lt(mod(floor((Y/H-$cy)*$lines),2),1),255,0)"
+            }
+            MaskShape.HEART ->
+                "if(lt(pow((X/W-$cx)*3.2,2)+pow((Y/H-$cy)*3.2-0.1,2),1),255,0)"
+            MaskShape.STAR -> {
+                val points = 5
+                "if(lt(mod(atan2(Y/H-$cy,X/W-$cx)*$points/6.283,1),${0.28f + mask.width * 0.2f}),255,0)"
+            }
+            MaskShape.NONE -> "255"
+        }
+        // Invert flips the mask; feather scales the final alpha so the mask
+        // softens toward transparent (deterministic, no neighbour sampling).
+        var a = if (mask.inverted) "(255-($expr))" else "($expr)"
+        val f = mask.feather.coerceIn(0f, 1f)
+        if (f > 0f) {
+            a = "($a)*${fmt((1f - f * 0.8).toDouble())}"
+        }
+        // This ffmpeg build rejects alpha-only geq ("A luminance or RGB
+        // expression is mandatory"), so pass the luma through unchanged.
+        sb.append(",geq=lum='lum(X,Y)':a='").append(a).append("'")
+    }
+
+    /**
+     * Final audio stage. The concat loop already produced `[mixa]` when the
+     * project has a music/audio track; this appends:
+     *  - master volume (0..2, from the loudness slider)
+     *  - fade-in / fade-out on the whole mix
+     *  - optional voice-over track mixed on top; when ducking is active the
+     *    music is sidechain-compressed by the voice track so it ducks under it.
+     *
+     * When there is no music track but a voice-over exists, the voice track
+     * becomes the sole audio stream.
+     */
+    private fun appendAudioTail(
+        sb: StringBuilder,
+        segments: List<ClipSegment>,
+        hasAudio: Boolean,
+        voiceOverUri: String?,
+        masterVolume: Float,
+        audioFadeInMs: Long,
+        audioFadeOutMs: Long,
+        audioDucking: Float,
+        voiceIndex: Int,
+    ) {
+        val voiceOn = !voiceOverUri.isNullOrBlank()
+        val totalSec = (segments.maxOfOrNull { it.destEndMs } ?: 0L) / 1000.0
+        val filters = ArrayList<String>()
+        val vol = masterVolume.coerceIn(0f, 2f)
+        if (hasAudio) {
+            if (abs(vol - 1f) > 0.005f) {
+                filters += "volume=${fmt(vol.toDouble())}"
+            }
+            if (audioFadeInMs > 0L) {
+                filters += "afade=t=in:st=0:d=${fmt(audioFadeInMs / 1000.0)}"
+            }
+            if (audioFadeOutMs > 0L && totalSec > 0.0) {
+                val st = (totalSec - audioFadeOutMs / 1000.0).coerceAtLeast(0.0)
+                filters += "afade=t=out:st=${fmt(st)}:d=${fmt(audioFadeOutMs / 1000.0)}"
+            }
+            sb.append(";[mixa]")
+            if (filters.isEmpty()) {
+                // anull is the identity audio filter used purely to rename the
+                // concat output to [music] so the duck/mix stage has a label.
+                sb.append("anull")
+            } else {
+                sb.append(filters.joinToString(","))
+            }
+            sb.append("[music]")
+            if (voiceOn && audioDucking > 0f) {
+                // Duck the music under the voice: sidechaincompress reads the
+                // voice as the control signal. threshold/ratio tuned so 0..1
+                // maps to a tasteful dip, 1.0 = full duck.
+                val thresh = 0.02 + (1f - audioDucking.coerceIn(0f, 1f)) * 0.15
+                val ratio = 2 + audioDucking.coerceIn(0f, 1f) * 18
+                sb.append(";[music][").append(voiceIndex).append(":a]")
+                    .append("sidechaincompress=threshold=").append(fmt(thresh.toDouble()))
+                    .append(":ratio=").append(fmt(ratio.toDouble()))
+                    .append(":attack=5:release=150[ducked];")
+                sb.append("[ducked][").append(voiceIndex).append(":a]amix=inputs=2:duration=first[outa]")
+            } else if (voiceOn) {
+                sb.append(";[music][").append(voiceIndex).append(":a]amix=inputs=2:duration=first[outa]")
+            } else {
+                sb.append(";[music]anull[outa]")
+            }
+            sb.append(";")
+        } else if (voiceOn) {
+            // No music track: the voice track alone becomes the audio stream.
+            sb.append(";[").append(voiceIndex).append(":a]volume=")
+                .append(fmt(vol.toDouble()))
+                .append("[outa];")
         }
     }
 
@@ -604,6 +878,12 @@ object FFmpegCommandBuilder {
     /** Hallucination guard: format without trailing junk. */
     private fun fmt(v: Double): String {
         return String.format(Locale.US, "%.3f", v)
+    }
+
+    /** ARGB (0xAARRGGBB) -> ffmpeg hex `0xRRGGBB` (alpha ignored for canvas). */
+    private fun colorHex(argb: Long): String {
+        val rgb = (argb.toInt() and 0xFFFFFF)
+        return String.format(Locale.US, "0x%06X", rgb)
     }
 
     private fun codecFor(config: ExportConfig, hwEncode: String?): String {

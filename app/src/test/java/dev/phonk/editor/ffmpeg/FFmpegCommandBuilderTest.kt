@@ -1,10 +1,15 @@
 package dev.phonk.editor.ffmpeg
 
 import dev.phonk.editor.model.AudioBitrate
+import dev.phonk.editor.model.BackgroundType
+import dev.phonk.editor.model.CanvasBackground
 import dev.phonk.editor.model.ClipSegment
+import dev.phonk.editor.model.CropConfig
 import dev.phonk.editor.model.EffectKind
 import dev.phonk.editor.model.ExportConfig
 import dev.phonk.editor.model.FrameRate
+import dev.phonk.editor.model.MaskConfig
+import dev.phonk.editor.model.MaskShape
 import dev.phonk.editor.model.OverlayKeyframe
 import dev.phonk.editor.model.Resolution
 import dev.phonk.editor.model.VideoCodec
@@ -342,10 +347,14 @@ class FFmpegCommandBuilderTest {
         opacity: Float = 1f,
         zIndex: Int = 0,
         keyframes: List<OverlayKeyframe> = emptyList(),
+        chromaKeyColor: Int? = null,
+        chromaKeySimilarity: Float = 0.3f,
+        mask: MaskConfig = MaskConfig(),
     ) = OverlayRender(
         id = id, file = file, baseW = baseW, baseH = baseH, startMs = startMs, endMs = endMs,
         x = x, y = y, scaleX = scaleX, scaleY = scaleY, rotation = rotation, opacity = opacity,
         zIndex = zIndex, keyframes = keyframes,
+        chromaKeyColor = chromaKeyColor, chromaKeySimilarity = chromaKeySimilarity, mask = mask,
     )
 
     @Test
@@ -428,5 +437,108 @@ class FFmpegCommandBuilderTest {
         assertEquals("single static window", 1, wins.size)
         assertEquals("start in seconds", 0.0, wins[0].startSec, 0.001)
         assertEquals("end clamped to timeline", 2.0, wins[0].endSec, 0.001)
+    }
+
+    // ---- LibreCuts port regression tests ----
+
+    @Test
+    fun reversedClipEmitsReverseOnBothStreams() {
+        val rev = segment.copy(reversed = true)
+        val graph = FFmpegCommandBuilder.buildFilterGraph(
+            listOf(rev), config, hasAudio = true,
+        )
+        assertTrue("video stream is reversed", graph.contains(",reverse,setpts=PTS-STARTPTS"))
+        assertTrue("audio stream is reversed", graph.contains(",areverse,asetpts=PTS-STARTPTS"))
+    }
+
+    @Test
+    fun colorBackgroundTintsThePad() {
+        val bg = CanvasBackground(type = BackgroundType.COLOR, colorArgb = 0xFF1020F0L)
+        val graph = FFmpegCommandBuilder.buildFilterGraph(
+            listOf(segment), config, hasAudio = true, canvasBackground = bg,
+        )
+        assertTrue("pad carries the requested colour", graph.contains("pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=0x1020F0"))
+        assertTrue("canvas is still built for the pipeline", graph.contains("scale=1080:1920:force_original_aspect_ratio=decrease"))
+    }
+
+    @Test
+    fun imageBackgroundAddsExtraInputAndFillLayer() {
+        val bg = CanvasBackground(type = BackgroundType.IMAGE, imageUri = "/cache/bg.png")
+        val args = FFmpegCommandBuilder.buildClip(
+            "/in.mp4", "/out.mp4", listOf(segment), config, true, canvasBackground = bg,
+        )
+        assertTrue("background file becomes an input", args.contains("/cache/bg.png"))
+        val graph = FFmpegCommandBuilder.buildFilterGraph(
+            listOf(segment), config, hasAudio = true, canvasBackground = bg,
+        )
+        assertTrue("background fills the canvas", graph.contains("[1:v]scale=1080:1920:force_original_aspect_ratio=increase"))
+        assertTrue("letterboxed content overlays the background", graph.contains("[bgimg][content]overlay=0:0"))
+    }
+
+    @Test
+    fun blurBackgroundSplitsAndBlursFills() {
+        val bg = CanvasBackground(type = BackgroundType.BLUR, blurRadius = 25f)
+        val graph = FFmpegCommandBuilder.buildFilterGraph(
+            listOf(segment), config, hasAudio = true, canvasBackground = bg,
+        )
+        assertTrue("base is split for the blur copy", graph.contains("[base]split[blursrc][content0]"))
+        assertTrue("backdrop is boxblurred", graph.contains("boxblur=luma_radius="))
+        assertTrue("content sits on the blurred fill", graph.contains("[blurbg][content]overlay=0:0"))
+    }
+
+    @Test
+    fun customCropCutsContentRect() {
+        val crop = CropConfig(enabled = true, xFraction = 0.1f, yFraction = 0.2f, wFraction = 0.5f, hFraction = 0.5f)
+        val graph = FFmpegCommandBuilder.buildFilterGraph(
+            listOf(segment), config, hasAudio = true, crop = crop,
+            sourceWidth = 1080, sourceHeight = 1920,
+        )
+        assertTrue("crop cuts the letterboxed rect", graph.contains(",crop="))
+        assertTrue("crop output is labelled outv", graph.contains("[outv]"))
+    }
+
+    @Test
+    fun chromaKeyAndMaskPunchThroughOverlayChain() {
+        val r = render(id = "ck", chromaKeyColor = 0x00FF00, chromaKeySimilarity = 0.4f)
+        val graph = FFmpegCommandBuilder.buildFilterGraph(
+            listOf(segment), config, hasAudio = true, overlayRenders = listOf(r),
+        )
+        assertTrue("keyed overlay runs colorkey", graph.contains(",colorkey=color=0x00FF00"))
+        assertTrue("keyed overlay still composites", graph.contains("overlay=x="))
+    }
+
+    @Test
+    fun maskShapeDrivesOverlayAlpha() {
+        val r = render(
+            id = "masked",
+            mask = MaskConfig(shape = MaskShape.ELLIPSE, x = 0.5f, y = 0.5f, width = 0.6f, height = 0.6f),
+        )
+        val graph = FFmpegCommandBuilder.buildFilterGraph(
+            listOf(segment), config, hasAudio = true, overlayRenders = listOf(r),
+        )
+        assertTrue("mask emits a geq alpha stage", graph.contains(",geq=lum='lum(X,Y)':a='"))
+        assertTrue("masked overlay still composites", graph.contains("overlay=x="))
+    }
+
+    @Test
+    fun masterVolumeAndAudioFadesApplyOnTheMix() {
+        val graph = FFmpegCommandBuilder.buildFilterGraph(
+            listOf(segment), config, hasAudio = true,
+            masterVolume = 1.5f, audioFadeInMs = 200L, audioFadeOutMs = 300L,
+        )
+        assertTrue("master volume scales the mix", graph.contains("volume=1.500"))
+        assertTrue("fade-in opens at zero", graph.contains("afade=t=in:st=0:d=0.200"))
+        assertTrue("fade-out ends at timeline end", graph.contains("afade=t=out:st=0.700:d=0.300"))
+    }
+
+    @Test
+    fun voiceOverMixesOverMusicAndDucksWhenEnabled() {
+        val graph = FFmpegCommandBuilder.buildFilterGraph(
+            listOf(segment), config, hasAudio = true,
+            voiceOverUri = "/cache/voice.mp3", audioDucking = 0.7f,
+        )
+        assertTrue("voice is added as the last input", graph.contains("[1:a]"))
+        assertTrue("ducking compresses the music under the voice", graph.contains("sidechaincompress="))
+        assertTrue("voice rides on top of the ducked music", graph.contains("amix=inputs=2:duration=first"))
     }
 }
