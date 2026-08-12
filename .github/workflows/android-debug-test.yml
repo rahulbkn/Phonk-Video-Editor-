@@ -1,0 +1,332 @@
+name: Android Debug Build + Test (Firebase-optional)
+
+# Runs on push to main/dev or manual dispatch. Builds the debug APK and runs a
+# verification gate:
+#   - If FIREBASE_PROJECT_ID + FIREBASE_SERVICE_ACCOUNT secrets are set:
+#     runs Firebase Test Lab, parses results, notifies the AI orchestrator.
+#   - Otherwise: runs the local unit-test gate (deterministic, free) and parses
+#     Gradle JUnit XMLs. This is the no-Firebase failure source for the
+#     AI debug loop.
+# On failure the ci-results artifact is left for the polling worker.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, dev ]
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  APP_MODULE: app
+  RESULTS_BUCKET: ""   # optional: gs://your-bucket (gcloud auto-creates one otherwise)
+
+jobs:
+  build:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    outputs:
+      apk_path: ${{ steps.locate-apk.outputs.apk_path }}
+      has_instrumentation: ${{ steps.detect.outputs.has_instrumentation }}
+      test_apk_path: ${{ steps.locate-test-apk.outputs.test_apk_path }}
+      has_firebase: ${{ steps.firebase-check.outputs.has_firebase }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Check for Firebase secrets
+        id: firebase-check
+        env:
+          PROJECT: ${{ secrets.FIREBASE_PROJECT_ID }}
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -n "$PROJECT" ] && [ -n "$SA" ]; then
+            echo "has_firebase=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_firebase=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install NDK + CMake (Firebase path only)
+        if: steps.firebase-check.outputs.has_firebase == 'true'
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "ndk;27.1.12297006" "cmake;4.1.2"
+          if [ ! -d "$ANDROID_HOME/cmake/4.1.2" ]; then
+            echo "::error::CMake missing after sdkmanager install"
+            exit 1
+          fi
+
+      - name: Strip Termux-only gradle.properties overrides for CI
+        run: |
+          sed -i '/aapt2FromMavenOverride/d' gradle.properties
+          sed -i '/android.builder.sdkDownload/d' gradle.properties
+          sed -i '/org.gradle.jvmargs=/s/=.*/=-Xmx3g -Dfile.encoding=UTF-8/' gradle.properties
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Detect instrumentation tests
+        id: detect
+        run: |
+          if [ -d "${APP_MODULE}/src/androidTest" ] && \
+             [ "$(find ${APP_MODULE}/src/androidTest -name '*.kt' -o -name '*.java' 2>/dev/null | wc -l)" -gt 0 ]; then
+            echo "has_instrumentation=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_instrumentation=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run local checks (lint, unit tests)
+        run: ./gradlew lintDebug testDebugUnitTest --continue
+        continue-on-error: true
+
+      - name: Build debug APK
+        if: steps.firebase-check.outputs.has_firebase == 'true'
+        run: ./gradlew assembleDebug
+
+      - name: Build debug androidTest APK (if instrumentation exists)
+        if: steps.firebase-check.outputs.has_firebase == 'true' && steps.detect.outputs.has_instrumentation == 'true'
+        run: ./gradlew assembleDebugAndroidTest
+
+      - name: Locate debug APK
+        id: locate-apk
+        if: steps.firebase-check.outputs.has_firebase == 'true'
+        run: |
+          APK=$(find . -path "*/build/outputs/apk/debug/*.apk" -not -name "*androidTest*" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "::error::Could not locate debug APK after assembleDebug"
+            exit 1
+          fi
+          echo "Found APK: $APK"
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Locate test APK
+        id: locate-test-apk
+        if: steps.firebase-check.outputs.has_firebase == 'true' && steps.detect.outputs.has_instrumentation == 'true'
+        run: |
+          TEST_APK=$(find . -path "*/build/outputs/apk/androidTest/debug/*.apk" | head -n 1)
+          echo "test_apk_path=$TEST_APK" >> "$GITHUB_OUTPUT"
+
+      - name: Upload debug APK
+        if: steps.firebase-check.outputs.has_firebase == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: ${{ steps.locate-apk.outputs.apk_path }}
+          retention-days: 14
+
+      - name: Upload test APK
+        if: steps.firebase-check.outputs.has_firebase == 'true' && steps.detect.outputs.has_instrumentation == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-androidTest-apk
+          path: ${{ steps.locate-test-apk.outputs.test_apk_path }}
+          retention-days: 14
+
+      - name: Upload unit-test result XMLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: app/build/test-results/testDebugUnitTest
+          retention-days: 14
+          if-no-files-found: ignore
+
+  firebase-test-lab:
+    name: Firebase Test Lab
+    needs: build
+    if: needs.build.outputs.has_firebase == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download debug APK
+        uses: actions/download-artifact@v4
+        with:
+          name: debug-apk
+          path: ./ci-artifacts
+
+      - name: Download test APK
+        if: needs.build.outputs.has_instrumentation == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: debug-androidTest-apk
+          path: ./ci-artifacts
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.FIREBASE_PROJECT_ID }}
+
+      - name: Run Firebase Test Lab
+        id: run-testlab
+        run: |
+          set -euo pipefail
+          mkdir -p ci-results
+          APK=$(find ./ci-artifacts -name "*.apk" -not -name "*androidTest*" | head -n 1)
+          TEST_APK=$(find ./ci-artifacts -name "*androidTest*.apk" | head -n 1 || true)
+
+          RESULTS_DIR="testlab-$(date +%Y%m%d-%H%M%S)-${GITHUB_RUN_ID}"
+          BUCKET_ARGS=()
+          if [ -n "${RESULTS_BUCKET}" ]; then
+            BUCKET_ARGS+=(--results-bucket="${RESULTS_BUCKET#gs://}")
+          fi
+
+          set +e
+          if [ "${{ needs.build.outputs.has_instrumentation }}" = "true" ] && [ -n "$TEST_APK" ]; then
+            gcloud firebase test android run \
+              --type instrumentation \
+              --app "$APK" \
+              --test "$TEST_APK" \
+              --device model=redfin,version=30,locale=en,orientation=portrait \
+              --device model=oriole,version=31,locale=en,orientation=portrait \
+              --results-dir="$RESULTS_DIR" \
+              "${BUCKET_ARGS[@]}" \
+              --timeout 20m \
+              --format=json > ci-results/raw-testlab-output.json
+          else
+            gcloud firebase test android run \
+              --type robo \
+              --app "$APK" \
+              --device model=redfin,version=30,locale=en,orientation=portrait \
+              --device model=oriole,version=31,locale=en,orientation=portrait \
+              --results-dir="$RESULTS_DIR" \
+              "${BUCKET_ARGS[@]}" \
+              --timeout 10m \
+              --format=json > ci-results/raw-testlab-output.json
+          fi
+          TESTLAB_EXIT=$?
+          set -e
+          echo "testlab_exit=$TESTLAB_EXIT" >> "$GITHUB_OUTPUT"
+          echo "results_dir=$RESULTS_DIR" >> "$GITHUB_OUTPUT"
+          cat ci-results/raw-testlab-output.json
+
+      - name: Download Firebase Test Lab artifacts
+        if: always()
+        run: |
+          set +e
+          BUCKET=$(python3 -c "import json;d=json.load(open('ci-results/raw-testlab-output.json'));print(d[0].get('gcs_path','')) if d else print('')" 2>/dev/null)
+          if [ -n "$BUCKET" ]; then
+            mkdir -p ci-results/raw-gcs
+            gsutil -m cp -r "$BUCKET/*" ci-results/raw-gcs/ 2>/dev/null || echo "Could not download GCS artifacts"
+          fi
+
+      - name: Set up Python
+        if: always()
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Parse results
+        if: always()
+        run: python3 scripts/parse_firebase_results.py
+
+      - name: Write job summary
+        if: always()
+        run: cat ci-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload ci-results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-results
+          path: ci-results
+          retention-days: 30
+
+      - name: Notify AI debug orchestrator (webhook) on failure
+        if: always() && github.ref == 'refs/heads/main'
+        run: |
+          set +e
+          STATUS=$(python3 -c "import json;print(json.load(open('ci-results/summary.json'))['status'])")
+          if [ "$STATUS" != "failed" ]; then
+            echo "Status is '$STATUS' — not triggering AI debug orchestrator."
+            exit 0
+          fi
+          if [ -z "${RENDER_WEBHOOK_URL}" ]; then
+            echo "RENDER_WEBHOOK_URL secret not set — polling worker will pick this up instead."
+            exit 0
+          fi
+          BODY=$(python3 -c 'import json; d=json.load(open("ci-results/summary.json")); print(json.dumps({"repo": "${{ github.repository }}", "branch": "main", "commit_sha": "${{ github.sha }}", "run_id": "${{ github.run_id }}", "workflow_run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}", "summary": d}))')          SIGNATURE=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "${RENDER_WEBHOOK_SECRET}" | sed 's/^.* //')
+          curl -sS -X POST "${RENDER_WEBHOOK_URL}" \
+            -H "Content-Type: application/json" \
+            -H "X-Signature-256: sha256=${SIGNATURE}" \
+            -d "$BODY" || echo "Webhook call failed — polling worker will pick this up."
+        env:
+          RENDER_WEBHOOK_URL: ${{ secrets.RENDER_WEBHOOK_URL }}
+          RENDER_WEBHOOK_SECRET: ${{ secrets.RENDER_WEBHOOK_SECRET }}
+
+      - name: Fail job if Firebase Test Lab failed
+        if: always()
+        run: |
+          STATUS=$(python3 -c "import json;print(json.load(open('ci-results/summary.json'))['status'])")
+          echo "Final status: $STATUS"
+          if [ "$STATUS" = "failed" ]; then
+            exit 1
+          fi
+
+  local-gate:
+    name: Local unit-test gate (no Firebase)
+    needs: build
+    if: needs.build.outputs.has_firebase == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download unit-test result XMLs
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-test-results
+          path: app/build/test-results/testDebugUnitTest
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Parse local unit-test results
+        id: parse
+        continue-on-error: true
+        run: python3 scripts/parse_local_results.py
+
+      - name: Write job summary
+        if: always()
+        run: cat ci-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload ci-results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-results
+          path: ci-results
+          retention-days: 30
+
+      - name: Fail job if unit tests failed
+        if: always()
+        run: |
+          if [ -f ci-results/summary.json ]; then
+            STATUS=$(python3 -c "import json;print(json.load(open('ci-results/summary.json'))['status'])")
+          else
+            STATUS="blocked"
+          fi
+          echo "Final status: $STATUS"
+          if [ "$STATUS" = "failed" ]; then
+            exit 1
+          fi
