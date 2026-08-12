@@ -15,17 +15,23 @@ import dev.phonk.editor.editor.CutPlanner
 import dev.phonk.editor.editor.EditEngine
 import dev.phonk.editor.export.ExportRunner
 import dev.phonk.editor.model.AnalysisResult
+import dev.phonk.editor.model.BackgroundType
+import dev.phonk.editor.model.CanvasBackground
 import dev.phonk.editor.model.ClipSegment
 import dev.phonk.editor.model.ColorGrade
 import dev.phonk.editor.model.ColorGradeMaps
+import dev.phonk.editor.model.CropConfig
 import dev.phonk.editor.model.DropType
 import dev.phonk.editor.model.EffectKind
 import dev.phonk.editor.model.ExportConfig
 import dev.phonk.editor.model.GradeKeyframe
 import dev.phonk.editor.model.GradeParam
+import dev.phonk.editor.model.MaskConfig
 import dev.phonk.editor.model.OverlayItem
 import dev.phonk.editor.model.OverlayLayer
 import dev.phonk.editor.model.PhonkProject
+import dev.phonk.editor.model.SubtitleCue
+import dev.phonk.editor.model.SubtitleTrack
 import dev.phonk.editor.model.TextLayer
 import dev.phonk.editor.model.withTiming
 import dev.phonk.editor.model.withTransform
@@ -344,6 +350,69 @@ class EditorViewModel(
         }
     }
 
+    /** Toggles reverse playback on the selected clip. */
+    fun setClipReversed(reversed: Boolean) {
+        val clip = selectedClip() ?: return
+        commit { proj ->
+            proj.copy(
+                clips = proj.clips.map { if (it.id == clip.id) it.copy(reversed = reversed) else it },
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+    }
+
+    /** Sets the canvas background behind the letterboxed video. */
+    fun setCanvasBackground(bg: CanvasBackground) {
+        commit { proj -> proj.copy(canvasBackground = bg, updatedAt = System.currentTimeMillis()) }
+    }
+
+    fun setCanvasBackgroundType(type: BackgroundType) {
+        commit { proj -> proj.copy(canvasBackground = proj.canvasBackground.copy(type = type), updatedAt = System.currentTimeMillis()) }
+    }
+
+    fun setCanvasBackgroundColor(argb: Long) {
+        commit { proj -> proj.copy(canvasBackground = proj.canvasBackground.copy(colorArgb = argb), updatedAt = System.currentTimeMillis()) }
+    }
+
+    fun setCanvasBackgroundImage(uri: String?) {
+        commit { proj -> proj.copy(canvasBackground = proj.canvasBackground.copy(imageUri = uri), updatedAt = System.currentTimeMillis()) }
+    }
+
+    /** Sets the custom crop region (fractions of the content rect). */
+    fun setCrop(enabled: Boolean, x: Float = 0f, y: Float = 0f, w: Float = 1f, h: Float = 1f) {
+        commit { proj ->
+            proj.copy(
+                crop = CropConfig(enabled = enabled, xFraction = x, yFraction = y, wFraction = w, hFraction = h),
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+    }
+
+    /** Toggles audio ducking (music ducks under voice-over peaks). */
+    fun setAudioDucking(enabled: Boolean) {
+        commit { proj -> proj.copy(audioDucking = enabled, updatedAt = System.currentTimeMillis()) }
+    }
+
+    fun setVoiceOverUri(uri: String?) {
+        commit { proj -> proj.copy(voiceOverUri = uri, updatedAt = System.currentTimeMillis()) }
+    }
+
+    /** Sets the chroma key (green screen) for the selected image overlay. */
+    fun setOverlayChromaKey(id: String, colorArgb: Int?, similarity: Float = 0.3f) {
+        commit { p -> applyOverlayItem(p, id) { ov ->
+            if (ov is OverlayLayer) ov.copy(chromaKeyColor = colorArgb?.toLong(), chromaKeySimilarity = similarity)
+            else ov
+        } }
+    }
+
+    /** Sets the shape mask for the selected image overlay. */
+    fun setOverlayMask(id: String, mask: MaskConfig) {
+        commit { p -> applyOverlayItem(p, id) { ov ->
+            if (ov is OverlayLayer) ov.copy(mask = mask)
+            else ov
+        } }
+    }
+
     fun setTransitionDuration(ms: Long) {
         val v = ms.coerceIn(0L, 3000L)
         commit { proj -> proj.copy(transitionDurationMs = v, updatedAt = System.currentTimeMillis()) }
@@ -635,8 +704,7 @@ class EditorViewModel(
         _selectedOverlayId.value = dup.id
     }
 
-    fun deleteOverlay(id: String) {
-        removeOverlay(id)
+    fun deleteOverlay(id: String) { removeOverlay(id)
     }
 
     fun setOverlayLocked(id: String, locked: Boolean) {
@@ -645,6 +713,22 @@ class EditorViewModel(
             val o = p.overlays.map { if (it.id == id) it.copy(locked = locked) else it }
             p.copy(textLayers = t, overlays = o, updatedAt = System.currentTimeMillis())
         }
+    }
+
+    fun addSubtitleTrack(fileName: String, cues: List<SubtitleCue>) {
+        commit { p ->
+            p.copy(subtitles = p.subtitles + SubtitleTrack(fileName = fileName, cues = cues), updatedAt = System.currentTimeMillis())
+        }
+    }
+
+    fun setSubtitleVisible(id: String, visible: Boolean) {
+        commit { p ->
+            p.copy(subtitles = p.subtitles.map { if (it.id == id) it.copy(visible = visible) else it }, updatedAt = System.currentTimeMillis())
+        }
+    }
+
+    fun clearSubtitles() {
+        commit { p -> p.copy(subtitles = emptyList(), updatedAt = System.currentTimeMillis()) }
     }
 
     fun setOverlayVisible(id: String, visible: Boolean) {
