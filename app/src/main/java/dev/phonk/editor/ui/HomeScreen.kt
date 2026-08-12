@@ -207,7 +207,11 @@ fun HomeScreen(
             BottomNav(
                 activeTab = NavTab.HOME,
                 onTabSelected = { tab ->
-                    if (tab != NavTab.HOME) onNavigate(tab)
+                    when (tab) {
+                        NavTab.ADD -> launcher.launch(arrayOf("video/*", "application/mp4"))
+                        NavTab.HOME -> Unit
+                        else -> onNavigate(tab)
+                    }
                 },
             )
         },
@@ -250,7 +254,7 @@ fun HomeScreen(
                 item {
                     QuickActionsCard(
                         onNewProject = { launcher.launch(arrayOf("video/*", "application/mp4")) },
-                        onOpenProject = { launcher.launch(arrayOf("video/*", "application/mp4")) },
+                        onOpenProject = { onNavigate(NavTab.PROJECTS) },
                         onExportVideo = {
                             recent?.firstOrNull()?.let { onOpen(it) }
                                 ?: run { Toast.makeText(context, "Open a video first", Toast.LENGTH_SHORT).show() }

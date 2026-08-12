@@ -95,6 +95,11 @@ std::vector<AudioSection> detectSections(const AnalysisFeatures& feat,
 // Full entry point used by JNI nativeAnalyzeAudio.
 AnalysisResult analyzeAudio(const float* pcm, size_t count, int sampleRate);
 
+// Cooperative cancellation: set before calling analyzeAudio, check inside
+// the DSP loop. Returns true when the caller requested cancellation.
+void setAnalysisCancelled(bool v);
+bool isAnalysisCancelled();
+
 // Convert AnalysisResult to compact JSON (later parsed by Kotlin/Java).
 std::string resultToJson(const AnalysisResult& result);
 

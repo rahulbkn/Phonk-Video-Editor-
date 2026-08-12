@@ -59,12 +59,6 @@ class ExportRunner(
     @Volatile
     var cancelRequested = false
 
-    /**
-     * The renderer of the export currently in flight, if any. Set as soon as a
-     * renderer is created and cleared when that export finishes, so a cancel
-     * can signal the live ffmpeg process instead of only flagging a later
-     * post-render check.
-     */
     @Volatile
     internal var activeRenderer: RenderCancellable? = null
 
@@ -112,9 +106,6 @@ class ExportRunner(
                 val effectSpecs = EffectScheduler.schedule(clips, analysis.beats)
                     .map { EffectSpec(it.atDestMs, it.durationMs, it.kind, it.amount) }
 
-                // Beat sync is exported as short brightness pulses on each beat
-                // (proportional to the strength slider), the only component of
-                // the preview's beat boost that is representable in this build.
                 val beatPulses = if (project.beatSync) {
                     buildList {
                         for (b in analysis.beats) {
@@ -147,7 +138,6 @@ class ExportRunner(
                 }
                 val allEffects = effectSpecs + beatPulses
 
-                // stage 1: resolve engine
                 val engine = ffmpegEngine()
                 if (!engine.available) {
                     Log.e(TAG, "export FAILED: ffmpeg engine unavailable")
@@ -157,13 +147,10 @@ class ExportRunner(
                 val renderer = FfmpegRenderer(engine)
                 activeRenderer = renderer
                 try {
-                    // stage 2: render to internal cache
                     val outFile = File(context.cacheDir, "phonk_export_${System.currentTimeMillis()}.mp4")
                     val overlayRenders = buildOverlayRenders(project, config)
                     val voiceOverPath = project.voiceOverUri?.let { copyToCache(it, "voiceover") }
                     val bgImagePath = project.canvasBackground.imageUri?.let { copyToCache(it, "canvasbg") }
-                    // A cancel that arrived before the renderer was created must
-                    // still prevent the render from ever starting.
                     if (cancelRequested) {
                         outFile.delete()
                         _state.value = ExportState.Idle
@@ -205,22 +192,23 @@ class ExportRunner(
                         is RenderState.Failed -> { Log.e(TAG, "export FAILED: " + completed.message); _state.value = ExportState.Failed(completed.message) }
                         is RenderState.Done -> {
                             Log.i(TAG, "export render done")
-                            // A completion racing a late cancel must not
-                            // resurrect a Done state.
                             if (cancelRequested) {
                                 outFile.delete()
                                 _state.value = ExportState.Idle
                                 return@runCatching
                             }
                             _state.value = ExportState.Running(0.9f, "saving")
-                            val uri = saveToGallery(context, outFile, config)
+                            val addToGallery = dev.phonk.editor.settings.SettingsManager.addToGallery
+                            val uri = if (addToGallery) {
+                                saveToGallery(context, outFile, config)
+                            } else {
+                                Uri.fromFile(outFile)
+                            }
                             _state.value = ExportState.Done(uri, outFile.absolutePath)
                         }
                         is RenderState.Running, is RenderState.Idle -> Unit
                     }
                 } finally {
-                    // Only clear our own reference; a newer export may already
-                    // have registered a fresh renderer.
                     if (activeRenderer === renderer) activeRenderer = null
                 }
             }.onFailure { t ->
@@ -245,10 +233,13 @@ class ExportRunner(
     private fun copyToCache(raw: String, tag: String): String? {
         return runCatching {
             val uri = Uri.parse(raw)
+            val mime = context.contentResolver.getType(uri)
             val ext = when {
-                raw.contains("mp3", true) || raw.contains("m4a", true) || raw.contains("aac", true) -> ".m4a"
-                raw.contains("png", true) -> ".png"
-                raw.contains("jpg", true) || raw.contains("jpeg", true) -> ".jpg"
+                mime == null -> ".bin"
+                mime.startsWith("audio/") -> ".m4a"
+                mime.startsWith("image/png") -> ".png"
+                mime.startsWith("image/jpeg") || mime.startsWith("image/jpg") -> ".jpg"
+                mime.startsWith("video/") -> ".mp4"
                 else -> ".bin"
             }
             val f = File(context.cacheDir, "export_${tag}_${System.currentTimeMillis()}$ext")
@@ -332,9 +323,12 @@ class ExportRunner(
         for (ov in project.overlays) {
             val uriStr = ov.uri ?: continue
             val uri = Uri.parse(uriStr)
+            val mime = resolver.getType(uri)
             val ext = when {
-                uriStr.contains("png", ignoreCase = true) -> ".png"
-                else -> ".jpg"
+                mime == null -> ".bin"
+                mime.startsWith("image/png") -> ".png"
+                mime.startsWith("image/jpeg") || mime.startsWith("image/jpg") -> ".jpg"
+                else -> ".bin"
             }
             val f = File(context.cacheDir, "overlay_${System.currentTimeMillis()}_${ov.id}$ext")
             try {

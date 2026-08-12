@@ -41,15 +41,27 @@
     <color name="surface_track">#0C0C12</color>
     <color name="surface_track_label">#101017</color>
     <color name="surface_panel">#121219</color>
+    <color name="surface_control">#17171F</color>
+    <color name="border_default">#282833</color>
+    <color name="border_subtle">#1E1E28</color>
     <color name="border_clip">#363642</color>
     <color name="border_selected">#7C3AED</color>
     <color name="surface_selected">#2D1B4E</color>
     <color name="text_selected">#C084FC</color>
-    <color name="keyframe">#A855F7</color>
+    <color name="text_ruler">#C9C9D2</color>
+    <color name="text_muted">#858692</color>
+    <color name="text_disabled">#B8B8C4</color>
+    <color name="keyframe">#FBBF24</color>
     <color name="audio_fx">#39D7B1</color>
     <color name="status_muted">#858692</color>
     <color name="preview_bg">#020205</color>
     <color name="seek_inactive">#373740</color>
+    <color name="overlay_handle">#F5F5F7</color>
+    <color name="toolbar_bg">#0B0B10</color>
+    <color name="text_status">#858692</color>
+    <color name="text_progress">#8F909D</color>
+    <color name="text_on_surface">#F5F5F7</color>
+    <color name="border_panel">#25252E</color>
 
     <!-- Legacy aliases (kept for compatibility) -->
     <color name="crash_background">@color/background</color>

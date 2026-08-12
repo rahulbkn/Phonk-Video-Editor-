@@ -19,6 +19,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -96,6 +97,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -128,6 +130,8 @@ import dev.phonk.editor.ui.components.PhonkButton
 import dev.phonk.editor.ui.components.PhonkProgressBar
 import dev.phonk.editor.ui.components.PhonkSlider
 import dev.phonk.editor.ui.components.SectionHeader
+import dev.phonk.editor.ui.components.ToolbarHeight
+import dev.phonk.editor.ui.components.AppDimens
 import dev.phonk.editor.ui.editor.EditorPreview
 import dev.phonk.editor.ui.editor.TextEditDialog
 import dev.phonk.editor.ui.editor.panels.AudioMixPanel
@@ -137,16 +141,25 @@ import dev.phonk.editor.ui.editor.panels.CropPanel
 import dev.phonk.editor.ui.editor.panels.EffectsPanel
 import dev.phonk.editor.ui.editor.panels.FiltersPanel
 import dev.phonk.editor.ui.editor.panels.MediaPanel
-import dev.phonk.editor.ui.editor.panels.MorePanel
 import dev.phonk.editor.ui.editor.panels.OverlayKeyPanel
 import dev.phonk.editor.ui.editor.panels.OverlayPanel
 import dev.phonk.editor.ui.editor.panels.RatioPanel
 import dev.phonk.editor.ui.editor.panels.ReversePanel
 import dev.phonk.editor.ui.editor.panels.SpeedPreset
-import dev.phonk.editor.ui.editor.panels.StickerPanel
+import dev.phonk.editor.ui.editor.panels.SpeedPanel
+import dev.phonk.editor.ui.editor.panels.BeatPanel
 import dev.phonk.editor.ui.editor.panels.SubtitlePanel
 import dev.phonk.editor.ui.editor.panels.TextPanel
 import dev.phonk.editor.ui.editor.panels.TransitionsPanel
+import dev.phonk.editor.ui.editor.panels.VolumePanel
+import dev.phonk.editor.ui.editor.panels.FadeInPanel
+import dev.phonk.editor.ui.editor.panels.FadeOutPanel
+import dev.phonk.editor.ui.editor.panels.PitchPanel
+import dev.phonk.editor.ui.editor.panels.FontPanel
+import dev.phonk.editor.ui.editor.panels.ColorPanel
+import dev.phonk.editor.ui.editor.panels.TextAnimationPanel
+import dev.phonk.editor.ui.editor.panels.OpacityPanel
+import dev.phonk.editor.ui.editor.panels.GradeSlidersPanel
 import dev.phonk.editor.util.TimeUtils.formatClock
 import kotlinx.coroutines.delay
 
@@ -369,7 +382,11 @@ fun EditorScreen(projectId: String, onBack: () -> Unit) {
 
     LaunchedEffect(Unit) {
         val loaded = ProjectStore(appCtx).load(projectId)
-        if (loaded != null) { vm.setProject(loaded); controller.totalMs = loaded.timelineDurationMs().takeIf { it > 0 } ?: loaded.videoDurationMs }
+        if (loaded != null) {
+            vm.setProject(loaded)
+            selectedAspect = loaded.aspectRatio
+            controller.totalMs = loaded.timelineDurationMs().takeIf { it > 0 } ?: loaded.videoDurationMs
+        }
     }
     LaunchedEffect(Unit) { while (true) { vm.pumpPosition(); controller.currentMs = playhead.coerceIn(0L, controller.totalMs); delay(100) } }
     LaunchedEffect(playhead, p, isPlaying) {
@@ -395,16 +412,19 @@ fun EditorScreen(projectId: String, onBack: () -> Unit) {
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Color(0xFF09090E))) {
+    Box(Modifier.fillMaxSize().background(colorResource(R.color.background))) {
         if (fullscreen) {
             FullscreenPreview(vm, p, isPlaying, playhead, selectedOverlayId, fullscreen, onToggleFullscreen = { fullscreen = false }, onEditText = { editOverlayId = it })
         } else {
-            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).background(Color(0xFF09090E))) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).background(colorResource(R.color.background))) {
                 // ─── Top Bar ─────────────────────────────────────────────────
                 TopBar(onBack = onBack, p = p, totalDur = totalDur, canUndo = canUndo, canRedo = canRedo, onUndo = { vm.undo() }, onRedo = { vm.redo() }, onExport = { vm.resetExport(); showExport = true })
 
                 // ─── Aspect / Canvas Toolbar ─────────────────────────────────
-                AspectToolbar(selectedAspect = selectedAspect, onAspectSelected = { selectedAspect = it })
+                AspectToolbar(selectedAspect = selectedAspect, onAspectSelected = {
+                    selectedAspect = it
+                    vm.setAspectRatio(it)
+                })
 
                 // ─── Preview ─────────────────────────────────────────────────
                 PreviewSection(vm, p, isPlaying, playhead, selectedOverlayId, selectedAspect, fullscreen, onToggleFullscreen = { fullscreen = !fullscreen }, onEditText = { editOverlayId = it })
@@ -437,23 +457,26 @@ fun EditorScreen(projectId: String, onBack: () -> Unit) {
                     exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(animationSpec = tween(150)),
                 ) {
                     selectedContextTool?.let { toolId ->
-                        ToolPanel(
-                            toolId = toolId,
-                            onClose = { selectedContextTool = null },
-                            vm = vm,
-                            p = p,
-                            playhead = playhead,
-                            selectedAspect = selectedAspect,
-                            onAspectSelected = { selectedAspect = it },
-                            showTextDialog = { showTextDialog = it },
-                            imagePickerLaunch = { imagePicker.launch(arrayOf("image/*")) },
-                            subtitlePickerLaunch = { subtitlePicker.launch(arrayOf("text/*", "application/*")) },
-                            voiceOverPickerLaunch = { voiceOverPicker.launch(arrayOf("audio/*")) },
-                            backgroundPickerLaunch = { backgroundPicker.launch(arrayOf("image/*")) },
-                            analysis = analysis,
-                            selectedOverlayId = selectedOverlayId,
-                            selectedClip = vm.selectedClip(),
-                        )
+                    ToolPanel(
+                        toolId = toolId,
+                        onClose = { selectedContextTool = null },
+                        vm = vm,
+                        p = p,
+                        playhead = playhead,
+                        selectedAspect = selectedAspect,
+                        onAspectSelected = {
+                            selectedAspect = it
+                            vm.setAspectRatio(it)
+                        },
+                        showTextDialog = { showTextDialog = it },
+                        imagePickerLaunch = { imagePicker.launch(arrayOf("image/*")) },
+                        subtitlePickerLaunch = { subtitlePicker.launch(arrayOf("text/*", "application/*")) },
+                        voiceOverPickerLaunch = { voiceOverPicker.launch(arrayOf("audio/*")) },
+                        backgroundPickerLaunch = { backgroundPicker.launch(arrayOf("image/*")) },
+                        analysis = analysis,
+                        selectedOverlayId = selectedOverlayId,
+                        selectedClip = vm.selectedClip(),
+                    )
                     }
                 }
 
@@ -534,8 +557,8 @@ private fun MainToolbar(
 ) {
     val tools = MainTool.entries
     Row(
-        Modifier.fillMaxWidth().height(56.dp).background(Color(0xFF0A0A0F))
-            .border(0.5.dp, Color(0xFF282833))
+        Modifier.fillMaxWidth().height(56.dp).background(colorResource(R.color.surface_timeline))
+            .border(0.5.dp, colorResource(R.color.border_default))
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 4.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(0.dp),
@@ -549,7 +572,7 @@ private fun MainToolbar(
                     .width(60.dp)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(if (active) Color(0xFFA855F7).copy(alpha = bgAlpha) else Color.Transparent)
+                    .background(if (active) MaterialTheme.colorScheme.primary.copy(alpha = bgAlpha) else Color.Transparent)
                     .clickable { onToolSelected(tool) }
                     .padding(vertical = 4.dp),
             ) {
@@ -560,14 +583,14 @@ private fun MainToolbar(
                     Icon(
                         toolIcon(tool),
                         stringResource(tool.labelRes),
-                        tint = if (active) Color(0xFFA855F7) else Color(0xFF8F8F9D),
+                        tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(22.dp),
                     )
                     Text(
                         stringResource(tool.labelRes),
                         fontSize = 10.sp,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                        color = if (active) Color(0xFFA855F7) else Color(0xFF8F8F9D),
+                        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                     )
                 }
@@ -586,8 +609,8 @@ private fun ContextualToolbar(
     onBack: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().height(52.dp).background(Color(0xFF0C0C12))
-            .border(0.5.dp, Color(0xFF282833))
+        Modifier.fillMaxWidth().height(ToolbarHeight).background(colorResource(R.color.surface_track))
+            .border(0.5.dp, colorResource(R.color.border_default))
             .padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -602,7 +625,7 @@ private fun ContextualToolbar(
                     active = selectedTool == tool.id,
                     onClick = { onToolSelected(tool) },
                     icon = tool.icon,
-                    activeColor = Color(0xFFA855F7),
+                    activeColor = MaterialTheme.colorScheme.primary,
                 )
             }
         }
@@ -610,8 +633,8 @@ private fun ContextualToolbar(
             icon = Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = "Close sub-toolbar",
             onClick = onBack,
-            background = Color(0xFF17171F),
-            tint = Color(0xFF8F8F9D),
+            background = colorResource(R.color.surface_control),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -637,8 +660,8 @@ private fun ToolPanel(
     selectedClip: dev.phonk.editor.model.ClipSegment?,
 ) {
     Column(
-        Modifier.fillMaxWidth().height(180.dp).background(Color(0xFF111117))
-            .border(0.5.dp, Color(0xFF25252E)),
+        Modifier.fillMaxWidth().height(AppDimens.previewMinHeight).background(colorResource(R.color.surface_track))
+            .border(0.5.dp, colorResource(R.color.border_panel)),
     ) {
         // Header
         Row(
@@ -647,35 +670,35 @@ private fun ToolPanel(
         ) {
             Text(
                 toolId.replace("_", " ").replaceFirstChar { it.uppercase() },
-                fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFFF5F5F7),
+                fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
             )
             EditorIconButton(
                 icon = Icons.Filled.Close,
                 contentDescription = "Close",
                 onClick = onClose,
-                background = Color(0xFF17171F),
-                tint = Color(0xFFF7F7FB),
+                background = colorResource(R.color.surface_control),
+                tint = colorResource(R.color.text_on_surface),
             )
         }
 
         // Content
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = EditorTokens.Space12)) {
             when (toolId) {
-                "speed" -> SpeedPanelInline(speed = selectedClip?.speed ?: 1f, onSpeed = { vm.setClipSpeed(it) }, onPreset = { pr -> when (pr) { SpeedPreset.NORMAL -> vm.setClipSpeed(1f); SpeedPreset.HYPER -> vm.setClipSpeed(2f); SpeedPreset.SLOW -> vm.setClipSpeed(0.5f); SpeedPreset.FAST -> vm.setClipSpeed(1.5f); SpeedPreset.BEAT_DROP -> vm.setClipSpeed(0.75f) } })
-                "volume" -> VolumePanelInline(volume = p?.volume ?: 1f, muted = p?.muted == true, onVolume = { vm.setVolume(it) }, onMuted = { vm.setMuted(it) })
+                "speed" -> SpeedPanel(speed = selectedClip?.speed ?: 1f, onSpeed = { vm.setClipSpeed(it) }, onPreset = { pr -> when (pr) { SpeedPreset.NORMAL -> vm.setClipSpeed(1f); SpeedPreset.HYPER -> vm.setClipSpeed(2f); SpeedPreset.SLOW -> vm.setClipSpeed(0.5f); SpeedPreset.FAST -> vm.setClipSpeed(1.5f); SpeedPreset.BEAT_DROP -> vm.setClipSpeed(0.75f) } })
+                "volume" -> VolumePanel(volume = p?.volume ?: 1f, muted = p?.muted == true, onVolume = { vm.setVolume(it) }, onMuted = { vm.setMuted(it) })
                 "transition" -> TransitionsPanel(durationMs = p?.transitionDurationMs ?: 400L, onDuration = { vm.setTransitionDuration(it) }, onSelect = { vm.setClipTransition(it) }, current = selectedClip?.transition)
-                "fade_in" -> FadeInPanelInline(fadeInMs = p?.fadeInMs ?: 0L, onFadeIn = { vm.setFadeIn(it) })
-                "fade_out" -> FadeOutPanelInline(fadeOutMs = p?.fadeOutMs ?: 0L, onFadeOut = { vm.setFadeOut(it) })
-                "pitch" -> PitchPanelInline(pitch = p?.pitch ?: 1f, onPitch = { vm.setPitch(it) })
-                "beat" -> BeatInlinePanel(bpm = analysis?.bpm ?: 0.0, onDetect = { vm.beginAnalysis() }, onSubdivision = { vm.applyBeatSubdivision(it) }, onAddDrop = { vm.addDropAt(playhead) }, onRemoveDrop = { vm.removeDropAt(playhead) }, dropCount = p?.drops?.size ?: 0, onPattern = { vm.applyPattern(it) })
-                "font" -> FontPanelInline(layer = selectedOverlayId?.let { vm.overlayById(it) as? TextLayer }, onSize = { id, size -> vm.updateTextOverlay(id, vm.overlayById(id)?.let { (it as? TextLayer)?.text ?: "" } ?: "", size, (vm.overlayById(id) as? TextLayer)?.opacity ?: 1f, (vm.overlayById(id) as? TextLayer)?.animation ?: "Fade", (vm.overlayById(id) as? TextLayer)?.colorArgb ?: 0xFFFFFFFFL) })
-                "color" -> ColorPanelInline(layer = selectedOverlayId?.let { vm.overlayById(it) as? TextLayer }, onColor = { id, color -> vm.updateTextOverlay(id, vm.overlayById(id)?.let { (it as? TextLayer)?.text ?: "" } ?: "", (vm.overlayById(id) as? TextLayer)?.fontSize ?: 24f, (vm.overlayById(id) as? TextLayer)?.opacity ?: 1f, (vm.overlayById(id) as? TextLayer)?.animation ?: "Fade", color) })
-                "text_animation" -> TextAnimationPanelInline(layer = selectedOverlayId?.let { vm.overlayById(it) as? TextLayer }, onAnimation = { id, anim -> vm.updateTextOverlay(id, vm.overlayById(id)?.let { (it as? TextLayer)?.text ?: "" } ?: "", (vm.overlayById(id) as? TextLayer)?.fontSize ?: 24f, (vm.overlayById(id) as? TextLayer)?.opacity ?: 1f, anim, (vm.overlayById(id) as? TextLayer)?.colorArgb ?: 0xFFFFFFFFL) })
-                "opacity" -> OpacityPanelInline(item = selectedOverlayId?.let { vm.overlayById(it) }, onOpacity = { id, op -> vm.setOverlayOpacity(id, op) })
+                "fade_in" -> FadeInPanel(fadeInMs = p?.fadeInMs ?: 0L, onFadeIn = { vm.setFadeIn(it) })
+                "fade_out" -> FadeOutPanel(fadeOutMs = p?.fadeOutMs ?: 0L, onFadeOut = { vm.setFadeOut(it) })
+                "pitch" -> PitchPanel(pitch = p?.pitch ?: 1f, onPitch = { vm.setPitch(it) })
+                "beat" -> BeatPanel(bpm = analysis?.bpm ?: 0.0, onDetect = { vm.beginAnalysis() }, onSubdivision = { vm.applyBeatSubdivision(it) }, onAddDrop = { vm.addDropAt(playhead) }, onRemoveDrop = { vm.removeDropAt(playhead) }, dropCount = p?.drops?.size ?: 0, onPattern = { vm.applyPattern(it) })
+                "font" -> FontPanel(layer = selectedOverlayId?.let { vm.overlayById(it) as? TextLayer }, onSize = { id, size -> vm.updateTextOverlay(id, vm.overlayById(id)?.let { (it as? TextLayer)?.text ?: "" } ?: "", size, (vm.overlayById(id) as? TextLayer)?.opacity ?: 1f, (vm.overlayById(id) as? TextLayer)?.animation ?: "Fade", (vm.overlayById(id) as? TextLayer)?.colorArgb ?: 0xFFFFFFFFL) })
+                "color" -> ColorPanel(layer = selectedOverlayId?.let { vm.overlayById(it) as? TextLayer }, onColor = { id, color -> vm.updateTextOverlay(id, vm.overlayById(id)?.let { (it as? TextLayer)?.text ?: "" } ?: "", (vm.overlayById(id) as? TextLayer)?.fontSize ?: 24f, (vm.overlayById(id) as? TextLayer)?.opacity ?: 1f, (vm.overlayById(id) as? TextLayer)?.animation ?: "Fade", color) })
+                "text_animation" -> TextAnimationPanel(layer = selectedOverlayId?.let { vm.overlayById(it) as? TextLayer }, onAnimation = { id, anim -> vm.updateTextOverlay(id, vm.overlayById(id)?.let { (it as? TextLayer)?.text ?: "" } ?: "", (vm.overlayById(id) as? TextLayer)?.fontSize ?: 24f, (vm.overlayById(id) as? TextLayer)?.opacity ?: 1f, anim, (vm.overlayById(id) as? TextLayer)?.colorArgb ?: 0xFFFFFFFFL) })
+                "opacity" -> OpacityPanel(item = selectedOverlayId?.let { vm.overlayById(it) }, onOpacity = { id, op -> vm.setOverlayOpacity(id, op) })
                 "effects" -> EffectsPanel(onAdd = { vm.addEffect(it) }, hasClipEffect = selectedClip?.effect != EffectKind.NONE && selectedClip?.effect != null, onClear = { vm.clearClipEffect() })
                 "filters" -> FiltersPanel(grade = p?.colorGrade() ?: ColorGrade(), keyframesEnabled = p?.gradeKeyframesEnabled == true, keyframeCount = p?.gradeKeyframes?.size ?: 0, beatSync = p?.beatSync == true, beatSyncStrength = p?.beatSyncStrength ?: 0.8f, onGrade = { param, v -> vm.setGrade(param, v) }, onResetAll = { vm.resetGrade() }, onAddKeyframe = { vm.addGradeKeyframe(playhead) }, onClearKeyframes = { vm.clearGradeKeyframes() }, onKeyframesEnabled = { vm.setGradeKeyframesEnabled(it) }, onBeatSync = { vm.setBeatSync(it) }, onBeatSyncStrength = { vm.setBeatSyncStrength(it) })
-                "adjust" -> GradeSlidersInline(grade = p?.colorGrade() ?: ColorGrade(), onGrade = { param, v -> vm.setGrade(param, v) }, onResetAll = { vm.resetGrade() })
+                "adjust" -> GradeSlidersPanel(grade = p?.colorGrade() ?: ColorGrade(), onGrade = { param, v -> vm.setGrade(param, v) }, onResetAll = { vm.resetGrade() })
                 "ratio" -> RatioPanel(selectedAspect = selectedAspect, onAspectSelected = onAspectSelected)
                 "media" -> MediaPanel(onImportVideo = imagePickerLaunch, onImportAudio = imagePickerLaunch, onImportPhoto = imagePickerLaunch)
                 "background" -> BackgroundPanel(
@@ -709,209 +732,6 @@ private fun ToolPanel(
     }
 }
 
-// ─── Inline Panel Components ─────────────────────────────────────────────────
-
-@Composable
-private fun VolumePanelInline(volume: Float, muted: Boolean, onVolume: (Float) -> Unit, onMuted: (Boolean) -> Unit) {
-    Column {
-        SectionHeader("Volume")
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            PhonkSlider(value = volume, onValueChange = onVolume, valueRange = 0f..1f, modifier = Modifier.weight(1f))
-            Text("%d%%".format((volume * 100).toInt()), fontSize = 11.sp, color = Color(0xFF8F8F9D), modifier = Modifier.width(40.dp))
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PhonkButton(if (muted) "Unmute" else "Mute", onClick = { onMuted(!muted) }, modifier = Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-private fun FadeInPanelInline(fadeInMs: Long, onFadeIn: (Long) -> Unit) {
-    Column {
-        SectionHeader("Fade In")
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8)) {
-            listOf(0L to "0ms", 250L to "250ms", 500L to "500ms", 1000L to "1000ms").forEach { (ms, label) ->
-                EditorChip(label, onClick = { onFadeIn(ms) }, selected = fadeInMs == ms)
-            }
-        }
-    }
-}
-
-@Composable
-private fun FadeOutPanelInline(fadeOutMs: Long, onFadeOut: (Long) -> Unit) {
-    Column {
-        SectionHeader("Fade Out")
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8)) {
-            listOf(0L to "0ms", 250L to "250ms", 500L to "500ms", 1000L to "1000ms").forEach { (ms, label) ->
-                EditorChip(label, onClick = { onFadeOut(ms) }, selected = fadeOutMs == ms)
-            }
-        }
-    }
-}
-
-@Composable
-private fun PitchPanelInline(pitch: Float, onPitch: (Float) -> Unit) {
-    Column {
-        SectionHeader("Pitch")
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            PhonkSlider(value = pitch, onValueChange = onPitch, valueRange = 0.5f..2f, modifier = Modifier.weight(1f))
-            Text("%.2fx".format(pitch), fontSize = 11.sp, color = Color(0xFF8F8F9D), modifier = Modifier.width(40.dp))
-        }
-    }
-}
-
-@Composable
-private fun BeatInlinePanel(bpm: Double, onDetect: () -> Unit, onSubdivision: (Double) -> Unit, onAddDrop: () -> Unit, onRemoveDrop: () -> Unit, dropCount: Int, onPattern: (CutPattern) -> Unit) {
-    Column {
-        SectionHeader("Beat")
-        if (bpm > 0) {
-            Text("BPM: %.1f".format(bpm), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFFA855F7))
-        } else {
-            PhonkButton("Detect Beats", onClick = onDetect, primary = true, modifier = Modifier.padding(vertical = EditorTokens.Space4))
-            Text("Detect beats first to enable auto-cut", fontSize = EditorTokens.FontLabel, color = Color(0xFF8F8F9D), modifier = Modifier.padding(vertical = 2.dp))
-        }
-        Spacer(Modifier.height(EditorTokens.Space4))
-        Text("Auto Cut", fontSize = EditorTokens.FontLabel, color = Color(0xFF8F8F9D))
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8)) {
-            listOf(0.25 to "1/4", 0.5 to "1/2", 1.0 to "1", 2.0 to "2", 4.0 to "4", 8.0 to "8").forEach { (sub, label) ->
-                EditorChip(label, onClick = { onSubdivision(sub) }, enabled = bpm > 0)
-            }
-        }
-        Spacer(Modifier.height(EditorTokens.Space8))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8)) {
-            PhonkButton("Add Drop ($dropCount)", onClick = onAddDrop, modifier = Modifier.weight(1f))
-            PhonkButton("Remove Drop", onClick = onRemoveDrop, modifier = Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-private fun FontPanelInline(layer: TextLayer?, onSize: (String, Float) -> Unit) {
-    val id = layer?.id
-    Column {
-        SectionHeader("Font Size")
-        if (id != null && layer != null) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                PhonkSlider(value = layer.fontSize, onValueChange = { onSize(id, it) }, valueRange = 8f..120f, modifier = Modifier.weight(1f))
-                Text("${layer.fontSize.toInt()}pt", fontSize = 11.sp, color = Color(0xFF8F8F9D), modifier = Modifier.width(40.dp))
-            }
-        } else {
-            Text("Select a text layer first", fontSize = 10.sp, color = Color(0xFF8F8F9D))
-        }
-    }
-}
-
-@Composable
-private fun ColorPanelInline(layer: TextLayer?, onColor: (String, Long) -> Unit) {
-    val id = layer?.id
-    val currentColor = layer?.colorArgb ?: 0xFFFFFFFFL
-    Column {
-        SectionHeader("Text Color")
-        if (id != null) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8)) {
-                listOf(
-                    0xFFFFFFFFL to "White", 0xFF000000L to "Black", 0xFFA855F7L to "Purple",
-                    0xFFFF6B6BL to "Red", 0xFF39D7B1L to "Teal", 0xFFFB923CL to "Orange",
-                    0xFF3B82F6L to "Blue", 0xFF22C55EL to "Green",
-                ).forEach { (color, label) ->
-                    val sel = currentColor == color
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier
-                        .clip(RoundedCornerShape(EditorTokens.CornerButton))
-                        .clickable { onColor(id, color) }
-                        .padding(EditorTokens.Space4)) {
-                        Box(Modifier.size(32.dp).clip(CircleShape).background(Color(color.toInt())).border(1.5.dp, if (sel) Color(0xFFA855F7) else Color(0xFF292934), CircleShape))
-                        Text(label, fontSize = EditorTokens.FontLabel, color = if (sel) Color(0xFFA855F7) else Color(0xFF8F8F9D))
-                    }
-                }
-            }
-        } else {
-            Text("Select a text layer first", fontSize = EditorTokens.FontLabel, color = Color(0xFF8F8F9D))
-        }
-    }
-}
-
-@Composable
-private fun TextAnimationPanelInline(layer: TextLayer?, onAnimation: (String, String) -> Unit) {
-    val id = layer?.id
-    Column {
-        SectionHeader("Text Animation")
-        if (id != null) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8)) {
-                listOf("Fade", "Slide", "Zoom", "Typewriter", "Bounce", "Glitch").forEach { anim ->
-                    EditorChip(anim, onClick = { onAnimation(id, anim) }, selected = layer?.animation == anim)
-                }
-            }
-        } else {
-            Text("Select a text layer first", fontSize = EditorTokens.FontLabel, color = Color(0xFF8F8F9D))
-        }
-    }
-}
-
-@Composable
-private fun OpacityPanelInline(item: OverlayItem?, onOpacity: (String, Float) -> Unit) {
-    val id = item?.id
-    Column {
-        SectionHeader("Opacity")
-        if (id != null && item != null) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                PhonkSlider(value = item.opacity, onValueChange = { onOpacity(id, it) }, valueRange = 0.05f..1f, modifier = Modifier.weight(1f))
-                Text("%d%%".format((item.opacity * 100).toInt()), fontSize = 11.sp, color = Color(0xFF8F8F9D), modifier = Modifier.width(40.dp))
-            }
-        } else {
-            Text("Select an overlay first", fontSize = 10.sp, color = Color(0xFF8F8F9D))
-        }
-    }
-}
-
-@Composable
-private fun GradeSlidersInline(grade: dev.phonk.editor.model.ColorGrade, onGrade: (dev.phonk.editor.model.GradeParam, Float) -> Unit, onResetAll: () -> Unit) {
-    Column {
-        SectionHeader("Adjust")
-        listOf(
-            dev.phonk.editor.model.GradeParam.BRIGHTNESS to "Brightness",
-            dev.phonk.editor.model.GradeParam.CONTRAST to "Contrast",
-            dev.phonk.editor.model.GradeParam.SATURATION to "Saturation",
-            dev.phonk.editor.model.GradeParam.EXPOSURE to "Exposure",
-            dev.phonk.editor.model.GradeParam.TEMPERATURE to "Temperature",
-            dev.phonk.editor.model.GradeParam.SHARPNESS to "Sharpness",
-        ).forEach { (param, label) ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(label, fontSize = 10.sp, color = Color(0xFF8F8F9D), modifier = Modifier.width(72.dp))
-                PhonkSlider(value = grade.get(param), onValueChange = { onGrade(param, it) }, valueRange = param.range, modifier = Modifier.weight(1f))
-                Text("%+.2f".format(grade.get(param).toDouble()), fontSize = 9.sp, color = Color(0xFF8F8F9D), modifier = Modifier.width(36.dp))
-            }
-        }
-        PhonkButton("Reset All", onClick = onResetAll, modifier = Modifier.padding(top = 4.dp))
-    }
-}
-
-@Composable
-private fun SpeedPanelInline(speed: Float, onSpeed: (Float) -> Unit, onPreset: (SpeedPreset) -> Unit) {
-    Column {
-        SectionHeader("Speed")
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8)) {
-            listOf(
-                "Normal" to SpeedPreset.NORMAL, "Slow" to SpeedPreset.SLOW, "Fast" to SpeedPreset.FAST,
-                "Beat Drop" to SpeedPreset.BEAT_DROP, "Hyper" to SpeedPreset.HYPER,
-            ).forEach { (label, preset) ->
-                val sel = when (preset) {
-                    SpeedPreset.NORMAL -> speed == 1f
-                    SpeedPreset.SLOW -> speed == 0.5f
-                    SpeedPreset.FAST -> speed == 1.5f
-                    SpeedPreset.BEAT_DROP -> speed == 0.75f
-                    SpeedPreset.HYPER -> speed == 2f
-                }
-                EditorChip(label, onClick = { onPreset(preset) }, selected = sel)
-            }
-        }
-        Spacer(Modifier.height(EditorTokens.Space8))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            PhonkSlider(value = speed, onValueChange = onSpeed, valueRange = 0.25f..4f, modifier = Modifier.weight(1f))
-            Text("%.2fx".format(speed), fontSize = EditorTokens.FontCompact, color = Color(0xFF8F8F9D), modifier = Modifier.width(40.dp))
-        }
-    }
-}
-
 // ─── Layout Sections ─────────────────────────────────────────────────────────
 
 @Composable
@@ -935,28 +755,28 @@ private fun FullscreenPreview(vm: EditorViewModel, p: PhonkProject?, isPlaying: 
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 26.dp).clip(RoundedCornerShape(22.dp))
-                .background(Color(0xFF111119).copy(alpha = 0.75f)).clickable { vm.playPause() }
+                .background(colorResource(R.color.surface_elevated).copy(alpha = 0.75f)).clickable { vm.playPause() }
                 .padding(horizontal = 20.dp, vertical = 10.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (isPlaying) "Pause" else "Play", tint = Color(0xFFF5F5F7), modifier = Modifier.size(19.dp))
-                Text(if (isPlaying) "Pause" else "Play", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFF5F5F7))
+                Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (isPlaying) "Pause" else "Play", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(19.dp))
+                Text(if (isPlaying) "Pause" else "Play", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
             }
         }
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier.align(Alignment.TopEnd).padding(10.dp).size(42.dp).clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF111119).copy(alpha = 0.75f)).clickable { onToggleFullscreen() },
+                .background(colorResource(R.color.surface_elevated).copy(alpha = 0.75f)).clickable { onToggleFullscreen() },
         ) {
-            Icon(Icons.Filled.FullscreenExit, "Exit fullscreen", tint = Color(0xFFF5F5F7), modifier = Modifier.size(18.dp))
+            Icon(Icons.Filled.FullscreenExit, "Exit fullscreen", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp))
         }
     }
 }
 
 @Composable
 private fun TopBar(onBack: () -> Unit, p: PhonkProject?, totalDur: Long, canUndo: Boolean, canRedo: Boolean, onUndo: () -> Unit, onRedo: () -> Unit, onExport: () -> Unit) {
-    Row(Modifier.fillMaxWidth().height(52.dp).background(Color(0xFF0B0B10))
-        .border(0.5.dp, Color(0xFF282833)).padding(horizontal = 8.dp),
+    Row(Modifier.fillMaxWidth().height(ToolbarHeight).background(colorResource(R.color.toolbar_bg))
+        .border(0.5.dp, colorResource(R.color.border_default)).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
         EditorIconButton(
             icon = Icons.AutoMirrored.Filled.ArrowBack,
@@ -964,9 +784,9 @@ private fun TopBar(onBack: () -> Unit, p: PhonkProject?, totalDur: Long, canUndo
             onClick = onBack,
             background = Color.Transparent,
         )
-        Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-            Text(p?.name ?: "Editor", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFFF5F5F7), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("1080×1920 · ${p?.export?.fps?.fps ?: 30}fps · ${formatClock(totalDur)}", fontSize = 10.sp, color = Color(0xFF8F8F9D), maxLines = 1)
+        Column(Modifier.weight(1f).padding(horizontal = EditorTokens.Space8)) {
+            Text(p?.name ?: "Editor", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("1080×1920 · ${p?.export?.fps?.fps ?: 30}fps · ${formatClock(totalDur)}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
         EditorIconButton(
             icon = Icons.Filled.Undo,
@@ -974,7 +794,7 @@ private fun TopBar(onBack: () -> Unit, p: PhonkProject?, totalDur: Long, canUndo
             onClick = onUndo,
             enabled = canUndo,
             background = Color.Transparent,
-            tint = Color(0xFFF5F5F7),
+            tint = MaterialTheme.colorScheme.onSurface,
         )
         EditorIconButton(
             icon = Icons.Filled.Redo,
@@ -982,11 +802,11 @@ private fun TopBar(onBack: () -> Unit, p: PhonkProject?, totalDur: Long, canUndo
             onClick = onRedo,
             enabled = canRedo,
             background = Color.Transparent,
-            tint = Color(0xFFF5F5F7),
+            tint = MaterialTheme.colorScheme.onSurface,
         )
-        Button(onClick = onExport, colors = ButtonDefaults.buttonColors(Color(0xFFA855F7), Color.White),
+        Button(onClick = onExport, colors = ButtonDefaults.buttonColors(MaterialTheme.colorScheme.primary, Color.White),
             shape = RoundedCornerShape(EditorTokens.CornerButton),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+            contentPadding = PaddingValues(horizontal = EditorTokens.Space16, vertical = EditorTokens.Space8)) {
             Text("Export", fontWeight = FontWeight.Bold, fontSize = EditorTokens.FontTool)
         }
     }
@@ -997,7 +817,7 @@ private fun PreviewSection(vm: EditorViewModel, p: PhonkProject?, isPlaying: Boo
     val config = LocalConfiguration.current
     val previewMaxH = (config.screenHeightDp * 0.32f).dp
     Box(
-        Modifier.fillMaxWidth().height(previewMaxH).padding(horizontal = 8.dp, vertical = 2.dp).background(Color(0xFF09090E)),
+        Modifier.fillMaxWidth().height(previewMaxH).padding(horizontal = EditorTokens.Space8, vertical = 2.dp).background(colorResource(R.color.background)),
         contentAlignment = Alignment.Center,
     ) {
         EditorPreview(
@@ -1020,8 +840,8 @@ private fun PreviewSection(vm: EditorViewModel, p: PhonkProject?, isPlaying: Boo
 
 @Composable
 private fun PlayerControls(playhead: Long, totalDur: Long, isPlaying: Boolean, onSeekBack: () -> Unit, onPlayPause: () -> Unit, onSeekForward: () -> Unit, fullscreen: Boolean, onToggleFullscreen: () -> Unit) {
-    Row(Modifier.fillMaxWidth().height(44.dp).background(Color(0xFF0B0B10))
-        .border(0.5.dp, Color(0xFF282833)).padding(horizontal = 6.dp),
+    Row(Modifier.fillMaxWidth().height(44.dp).background(colorResource(R.color.toolbar_bg))
+        .border(0.5.dp, colorResource(R.color.border_default)).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         EditorIconButton(
             icon = Icons.Filled.SkipPrevious,
@@ -1029,7 +849,7 @@ private fun PlayerControls(playhead: Long, totalDur: Long, isPlaying: Boolean, o
             onClick = onSeekBack,
             target = EditorTokens.ToolTarget,
             background = Color.Transparent,
-            tint = Color(0xFFB8B8C4),
+            tint = colorResource(R.color.text_disabled),
         )
         EditorIconButton(
             icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
@@ -1037,7 +857,7 @@ private fun PlayerControls(playhead: Long, totalDur: Long, isPlaying: Boolean, o
             onClick = onPlayPause,
             target = EditorTokens.ToolTarget,
             background = Color.Transparent,
-            tint = Color(0xFFA855F7),
+            tint = MaterialTheme.colorScheme.primary,
         )
         EditorIconButton(
             icon = Icons.Filled.SkipNext,
@@ -1045,12 +865,12 @@ private fun PlayerControls(playhead: Long, totalDur: Long, isPlaying: Boolean, o
             onClick = onSeekForward,
             target = EditorTokens.ToolTarget,
             background = Color.Transparent,
-            tint = Color(0xFFB8B8C4),
+            tint = colorResource(R.color.text_disabled),
         )
         Spacer(Modifier.weight(1f))
-        Text(formatClock(playhead), fontSize = EditorTokens.FontTool, fontWeight = FontWeight.Bold, color = Color(0xFFA855F7))
-        Text(" / ", fontSize = EditorTokens.FontTool, color = Color(0xFF8F8F9D))
-        Text(formatClock(totalDur), fontSize = EditorTokens.FontTool, color = Color(0xFF8F8F9D))
+        Text(formatClock(playhead), fontSize = EditorTokens.FontTool, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text(" / ", fontSize = EditorTokens.FontTool, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(formatClock(totalDur), fontSize = EditorTokens.FontTool, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.weight(1f))
         EditorIconButton(
             icon = Icons.Filled.Fullscreen,
@@ -1058,7 +878,7 @@ private fun PlayerControls(playhead: Long, totalDur: Long, isPlaying: Boolean, o
             onClick = onToggleFullscreen,
             target = EditorTokens.ToolTarget,
             background = Color.Transparent,
-            tint = if (fullscreen) Color(0xFFA855F7) else Color(0xFFB8B8C4),
+            tint = if (fullscreen) MaterialTheme.colorScheme.primary else colorResource(R.color.text_disabled),
         )
     }
 }
@@ -1067,24 +887,24 @@ private fun PlayerControls(playhead: Long, totalDur: Long, isPlaying: Boolean, o
 private fun AspectToolbar(selectedAspect: String, onAspectSelected: (String) -> Unit) {
     val aspects = listOf("1:1", "4:5", "9:16", "16:9", "2.35:1")
     Row(
-        Modifier.fillMaxWidth().height(40.dp).background(Color(0xFF0B0B10))
-            .border(0.5.dp, Color(0xFF282833)).padding(horizontal = 8.dp),
+        Modifier.fillMaxWidth().height(40.dp).background(colorResource(R.color.toolbar_bg))
+            .border(0.5.dp, colorResource(R.color.border_default)).padding(horizontal = EditorTokens.Space8),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space6),
     ) {
-        Text("Aspect", fontSize = 10.sp, color = Color(0xFF8F8F9D), modifier = Modifier.weight(1f))
+        Text("Aspect", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
         aspects.forEach { label ->
             val sel = selectedAspect == label
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (sel) Color(0xFFA855F7).copy(alpha = 0.22f) else Color(0xFF17171F))
+                    .clip(RoundedCornerShape(EditorTokens.CornerControl))
+                    .background(if (sel) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else colorResource(R.color.surface_control))
                     .clickable { onAspectSelected(label) }
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .padding(horizontal = EditorTokens.Space12, vertical = EditorTokens.Space6),
             ) {
                 Text(label, fontSize = 10.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
-                    color = if (sel) Color(0xFFA855F7) else Color(0xFFC9C9D2))
+                    color = if (sel) MaterialTheme.colorScheme.primary else colorResource(R.color.text_ruler))
             }
         }
     }
@@ -1102,8 +922,8 @@ private fun TimelineToolbar(
     onZoomOut: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().height(44.dp).background(Color(0xFF0B0B10))
-            .border(0.5.dp, Color(0xFF282833)).padding(horizontal = 6.dp),
+        Modifier.fillMaxWidth().height(44.dp).background(colorResource(R.color.toolbar_bg))
+            .border(0.5.dp, colorResource(R.color.border_default)).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -1112,7 +932,7 @@ private fun TimelineToolbar(
         TimelineToolButton(Icons.Filled.MusicNote, "Marker", onMarker)
         Spacer(Modifier.weight(1f))
         ZoomIconButton("−", "Zoom out", onZoomOut)
-        Text("$zoomPercent%", fontSize = EditorTokens.FontLabel, color = Color(0xFFC9C9D2), modifier = Modifier.padding(horizontal = 4.dp))
+        Text("$zoomPercent%", fontSize = EditorTokens.FontLabel, color = colorResource(R.color.text_ruler), modifier = Modifier.padding(horizontal = 4.dp))
         TimelineToolButton(Icons.Filled.Add, "Zoom in", onZoomIn)
     }
 }
@@ -1134,10 +954,10 @@ private fun ZoomIconButton(glyph: String, label: String, onClick: () -> Unit) {
         modifier = Modifier
             .size(EditorTokens.CompactTarget)
             .clip(RoundedCornerShape(EditorTokens.CornerButton))
-            .background(Color(0xFF17171F))
+            .background(colorResource(R.color.surface_control))
             .clickable { onClick() },
     ) {
-        Text(glyph, fontSize = EditorTokens.FontTool, color = Color(0xFFC9C9D2))
+        Text(glyph, fontSize = EditorTokens.FontTool, color = colorResource(R.color.text_ruler))
     }
 }
 
@@ -1167,17 +987,17 @@ private fun TimelineSection(vm: EditorViewModel, controller: TimelineController,
 
 @Composable
 private fun StatusBar(selectedAspect: String, p: PhonkProject?) {
-    Row(Modifier.fillMaxWidth().height(24.dp).background(Color(0xFF0B0B10))
-        .border(0.5.dp, Color(0xFF292934)).padding(horizontal = 8.dp, vertical = 2.dp),
+    Row(Modifier.fillMaxWidth().height(EditorTokens.StatusBarHeight).background(colorResource(R.color.toolbar_bg))
+        .border(0.5.dp, colorResource(R.color.border_default)).padding(horizontal = EditorTokens.Space8, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(Modifier.size(6.dp).clip(CircleShape).background(Color(0xFF39D7B1)))
-        Text("Saved", fontSize = 9.sp, color = Color(0xFF39D7B1))
-        Text("•", fontSize = 9.sp, color = Color(0xFF858692))
-        Text(selectedAspect, fontSize = 9.sp, color = Color(0xFF858692))
-        Text("•", fontSize = 9.sp, color = Color(0xFF858692))
-        Text("${p?.export?.fps?.fps ?: 30} FPS", fontSize = 9.sp, color = Color(0xFF858692))
+        Box(Modifier.size(6.dp).clip(CircleShape).background(colorResource(R.color.audio_fx)))
+        Text("Saved", fontSize = 9.sp, color = colorResource(R.color.audio_fx))
+        Text("•", fontSize = 9.sp, color = colorResource(R.color.text_status))
+        Text(selectedAspect, fontSize = 9.sp, color = colorResource(R.color.text_status))
+        Text("•", fontSize = 9.sp, color = colorResource(R.color.text_status))
+        Text("${p?.export?.fps?.fps ?: 30} FPS", fontSize = 9.sp, color = colorResource(R.color.text_status))
         Spacer(Modifier.weight(1f))
-        Text("GPU", fontSize = 9.sp, color = Color(0xFF858692))
+        Text("GPU", fontSize = 9.sp, color = colorResource(R.color.text_status))
     }
 }
 
@@ -1185,44 +1005,44 @@ private fun StatusBar(selectedAspect: String, p: PhonkProject?) {
 private fun ExportOverlay(showExport: Boolean, onClose: () -> Unit, exportState: ExportState, p: PhonkProject?, pattern: CutPattern, exportConfig: ExportConfig, onExport: () -> Unit, onCancel: () -> Unit, onReset: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(onClick = onClose)) {
         Surface(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars),
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp), color = Color(0xFF121219), shadowElevation = 12.dp) {
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp), color = colorResource(R.color.surface_panel), shadowElevation = 12.dp) {
             Column(Modifier.fillMaxWidth().padding(EditorTokens.Space12).verticalScroll(rememberScrollState())) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Export", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFFF7F7FB), modifier = Modifier.weight(1f))
+                    Text("Export", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = colorResource(R.color.text_on_surface), modifier = Modifier.weight(1f))
                     EditorIconButton(
                         icon = Icons.Filled.Close,
                         contentDescription = "Close",
                         onClick = onClose,
-                        background = Color(0xFF17171F),
-                        tint = Color(0xFFF7F7FB),
+                        background = colorResource(R.color.surface_control),
+                        tint = colorResource(R.color.text_on_surface),
                     )
                 }
                 Spacer(Modifier.height(EditorTokens.Space8))
-                Text("${p?.export?.resolution ?: "1080p"} · ${p?.export?.fps?.fps ?: 30} FPS", fontSize = EditorTokens.FontCompact, color = Color(0xFF8F8F9D))
+                Text("${p?.export?.resolution ?: "1080p"} · ${p?.export?.fps?.fps ?: 30} FPS", fontSize = EditorTokens.FontCompact, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(EditorTokens.Space8))
                 when (val es = exportState) {
                     is ExportState.Running -> {
-                        PhonkProgressBar(progress = es.progress, activeColor = Color(0xFFA855F7), modifier = Modifier.fillMaxWidth())
-                        Spacer(Modifier.height(EditorTokens.Space4)); Text("${(es.progress * 100).toInt()}%", fontSize = EditorTokens.FontLabel, color = Color(0xFF8F909D))
+                        PhonkProgressBar(progress = es.progress, activeColor = MaterialTheme.colorScheme.primary, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(EditorTokens.Space4)); Text("${(es.progress * 100).toInt()}%", fontSize = EditorTokens.FontLabel, color = colorResource(R.color.text_progress))
                         Spacer(Modifier.height(EditorTokens.Space4))
-                        Button(onClick = onCancel, colors = ButtonDefaults.buttonColors(Color(0xFF17171F)), shape = RoundedCornerShape(EditorTokens.CornerButton), modifier = Modifier.fillMaxWidth().height(EditorTokens.PrimaryHeight)) {
-                            Text("Cancel", color = Color(0xFFF7F7FB))
+                        Button(onClick = onCancel, colors = ButtonDefaults.buttonColors(colorResource(R.color.surface_control)), shape = RoundedCornerShape(EditorTokens.CornerButton), modifier = Modifier.fillMaxWidth().height(EditorTokens.PrimaryHeight)) {
+                            Text("Cancel", color = colorResource(R.color.text_on_surface))
                         }
                     }
                     is ExportState.Done -> {
-                        Text("Done!", fontSize = EditorTokens.FontTool, color = Color(0xFF39D7B1)); Spacer(Modifier.height(EditorTokens.Space4))
-                        Button(onClick = onClose, colors = ButtonDefaults.buttonColors(Color(0xFFA855F7)), shape = RoundedCornerShape(EditorTokens.CornerButton), modifier = Modifier.fillMaxWidth().height(EditorTokens.PrimaryHeight)) {
+                        Text("Done!", fontSize = EditorTokens.FontTool, color = colorResource(R.color.audio_fx)); Spacer(Modifier.height(EditorTokens.Space4))
+                        Button(onClick = onClose, colors = ButtonDefaults.buttonColors(MaterialTheme.colorScheme.primary), shape = RoundedCornerShape(EditorTokens.CornerButton), modifier = Modifier.fillMaxWidth().height(EditorTokens.PrimaryHeight)) {
                             Text("OK", color = Color.White)
                         }
                     }
                     is ExportState.Failed -> {
-                        Text(es.message, fontSize = EditorTokens.FontLabel, color = Color(0xFFFF6B6B)); Spacer(Modifier.height(EditorTokens.Space4))
-                        Button(onClick = onExport, colors = ButtonDefaults.buttonColors(Color(0xFFA855F7)), shape = RoundedCornerShape(EditorTokens.CornerButton), modifier = Modifier.fillMaxWidth().height(EditorTokens.PrimaryHeight)) {
+                        Text(es.message, fontSize = EditorTokens.FontLabel, color = MaterialTheme.colorScheme.error); Spacer(Modifier.height(EditorTokens.Space4))
+                        Button(onClick = onExport, colors = ButtonDefaults.buttonColors(MaterialTheme.colorScheme.primary), shape = RoundedCornerShape(EditorTokens.CornerButton), modifier = Modifier.fillMaxWidth().height(EditorTokens.PrimaryHeight)) {
                             Text("Retry", color = Color.White)
                         }
                     }
                     ExportState.Idle -> {
-                        Button(onClick = onExport, colors = ButtonDefaults.buttonColors(Color(0xFFA855F7), Color.White),
+                        Button(onClick = onExport, colors = ButtonDefaults.buttonColors(MaterialTheme.colorScheme.primary, Color.White),
                             shape = RoundedCornerShape(EditorTokens.CornerButton), modifier = Modifier.fillMaxWidth().height(EditorTokens.PrimaryHeight)) {
                             Text("Start Export", fontWeight = FontWeight.Bold, fontSize = EditorTokens.FontTool)
                         }

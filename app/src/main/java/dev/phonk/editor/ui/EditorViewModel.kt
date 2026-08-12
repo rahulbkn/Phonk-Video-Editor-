@@ -187,7 +187,8 @@ class EditorViewModel(
                 fluxCurve = FloatArray(0),
             )
         }
-        player.setVideo(Uri.parse(p.videoUri ?: p.audioUri ?: ""))
+        val mediaUri = p.videoUri ?: p.audioUri
+        if (mediaUri != null) player.setVideo(Uri.parse(mediaUri)) else player.setVideo(null)
         player.pause()
         _isPlaying.value = false
         _playheadMs.value = 0L
@@ -416,6 +417,10 @@ class EditorViewModel(
     fun setTransitionDuration(ms: Long) {
         val v = ms.coerceIn(0L, 3000L)
         commit { proj -> proj.copy(transitionDurationMs = v, updatedAt = System.currentTimeMillis()) }
+    }
+
+    fun setAspectRatio(label: String) {
+        commit { proj -> proj.copy(aspectRatio = label, updatedAt = System.currentTimeMillis()) }
     }
 
     fun setVolume(v: Float) {

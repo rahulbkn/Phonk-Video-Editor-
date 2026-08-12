@@ -58,6 +58,8 @@ data class PhonkProject(
     val beatSyncStrength: Float = 0.8f,
     /** Default transition duration between clips (ms). */
     val transitionDurationMs: Long = 400L,
+    /** Preview/export aspect ratio label (e.g. "9:16", "1:1", "16:9"). */
+    val aspectRatio: String = "9:16",
     val textLayers: List<TextLayer> = emptyList(),
     val overlays: List<OverlayLayer> = emptyList(),
     /** Subtitle tracks (SRT/WebVTT), rendered under the image/text overlays. */
@@ -382,6 +384,7 @@ class ProjectCodec {
         o.put("beatSync", p.beatSync)
         o.put("beatSyncStrength", p.beatSyncStrength.toDouble())
         o.put("transitionDurationMs", p.transitionDurationMs)
+        o.put("aspectRatio", p.aspectRatio)
         o.put("textLayers", JSONArray().also { arr -> p.textLayers.forEach { t ->
             arr.put(JSONObject()
                 .put("id", t.id)
@@ -522,6 +525,7 @@ class ProjectCodec {
             beatSync = o.optBoolean("beatSync", false),
             beatSyncStrength = o.optDouble("beatSyncStrength", 0.8).toFloat(),
             transitionDurationMs = o.optLong("transitionDurationMs", 400L),
+            aspectRatio = o.optString("aspectRatio", "9:16"),
             textLayers = parseTextLayers(o.optJSONArray("textLayers")),
             overlays = parseOverlays(o.optJSONArray("overlays")),
             subtitles = parseSubtitles(o.optJSONArray("subtitles")),

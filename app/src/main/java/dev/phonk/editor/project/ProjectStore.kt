@@ -35,7 +35,7 @@ class ProjectStore(private val context: Context) {
         return ids
             .sortedByDescending { prefs.getLong("ts_$it", 0L) }
             .mapNotNull { load(it) }
-            .take(12)
+            .take(MAX_RECENT)
     }
 
     fun delete(id: String) {
@@ -48,13 +48,22 @@ class ProjectStore(private val context: Context) {
     fun rememberRecent(id: String) {
         val ids = (prefs.getStringSet("ids", emptySet()) ?: emptySet()).toMutableSet()
         ids.add(id)
-        prefs.edit()
-            .putStringSet("ids", ids)
-            .putLong("ts_$id", System.currentTimeMillis())
-            .apply()
+        val now = System.currentTimeMillis()
+        if (ids.size > MAX_RECENT) {
+            val toRemove = ids.sortedBy { prefs.getLong("ts_$it", 0L) }.take(ids.size - MAX_RECENT)
+            ids.removeAll(toRemove.toSet())
+            prefs.edit()
+                .putStringSet("ids", ids)
+                .putLong("ts_$id", now)
+                .also { ed -> toRemove.forEach { ed.remove("ts_$it") } }
+                .apply()
+        } else {
+            prefs.edit().putStringSet("ids", ids).putLong("ts_$id", now).apply()
+        }
     }
 
     companion object {
+        private const val MAX_RECENT = 50
         fun isValidJson(text: String): Boolean {
             return runCatching { JSONObject(text) }.isSuccess
         }

@@ -132,4 +132,12 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_phonk_editor_native_PhonkNative_na
     return toJavaString(env, "phonk-native-1.0.0");
 }
 
+extern "C" JNIEXPORT void JNICALL Java_dev_phonk_editor_native_PhonkNative_nativeSetAnalysisCancelled (JNIEnv* env, jclass /*clazz*/, jboolean v) {
+    phonk::setAnalysisCancelled(v == JNI_TRUE);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL Java_dev_phonk_editor_native_PhonkNative_nativeIsAnalysisCancelled (JNIEnv* env, jclass /*clazz*/) {
+    return phonk::isAnalysisCancelled() ? JNI_TRUE : JNI_FALSE;
+}
+
 }  // extern "C"

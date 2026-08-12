@@ -65,6 +65,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -171,7 +172,7 @@ fun EditorPreview(
     val frame = computeFxFrame(project, destPlayheadMs, positionMs, fxPhase)
 
     BoxWithConstraints(
-        modifier = modifier.background(Color(0xFF09090E)),
+        modifier = modifier.background(colorResource(R.color.preview_bg)),
         contentAlignment = Alignment.Center,
     ) {
         val ld = LocalDensity.current
@@ -767,19 +768,19 @@ private fun DebugOverlayPanel(
                 .background(Color.Black.copy(alpha = 0.65f))
                 .padding(8.dp),
         ) {
-            Text("CANVAS ${canvasW}x${canvasH} @${TimeUtils.formatClock(destMs)}", color = Color(0xFF8BC34A), fontSize = 10.sp)
-            Text("PLAYHEAD d=$destMs src=$sourceMs", color = Color(0xFF8BC34A), fontSize = 10.sp)
-            Text("LAYERS text=${activeTexts.size}/${project.textLayers.size} img=${activeOverlays.size}/${project.overlays.size} beat=${beatPulse.toString().take(4)}", color = Color(0xFF8BC34A), fontSize = 10.sp)
-            Text("ALIGN center · FONT default (bold)", color = Color(0xFF8BC34A), fontSize = 10.sp)
+            Text("CANVAS ${canvasW}x${canvasH} @${TimeUtils.formatClock(destMs)}", color = colorResource(R.color.audio_fx), fontSize = 10.sp)
+            Text("PLAYHEAD d=$destMs src=$sourceMs", color = colorResource(R.color.audio_fx), fontSize = 10.sp)
+            Text("LAYERS text=${activeTexts.size}/${project.textLayers.size} img=${activeOverlays.size}/${project.overlays.size} beat=${beatPulse.toString().take(4)}", color = colorResource(R.color.audio_fx), fontSize = 10.sp)
+            Text("ALIGN center · FONT default (bold)", color = colorResource(R.color.audio_fx), fontSize = 10.sp)
             activeTexts.forEach { t ->
                 val m = layerMotion(t, destMs)
                 Text(
                     "  TEXT '${t.text.take(16)}' f=${t.fontSize.toInt().toString().take(3)} a=${(t.opacity * m.alpha).toString().take(4)} anim=${t.animation.take(8)} s=${t.startMs}..${t.endMs}",
-                    color = Color(0xFFCDDC39), fontSize = 10.sp,
+                    color = colorResource(R.color.keyframe), fontSize = 10.sp,
                 )
             }
             activeOverlays.forEach { o ->
-                Text("  IMG '${o.label.take(18)}' ${o.kind} ${o.startMs}..${o.endMs}", color = Color(0xFFCDDC39), fontSize = 10.sp)
+                Text("  IMG '${o.label.take(18)}' ${o.kind} ${o.startMs}..${o.endMs}", color = colorResource(R.color.keyframe), fontSize = 10.sp)
             }
         }
     }

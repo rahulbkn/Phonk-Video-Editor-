@@ -10,6 +10,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -62,28 +63,32 @@ class AnalysisManager(
                 _state.value = AnalysisState.Running(Phase.ANALYZING, 0f)
                 val json = withContext(Dispatchers.Default) {
                     coroutineContext.ensureActive()
+                    PhonkNative.nativeSetAnalysisCancelled(false)
                     val future = async(Dispatchers.Default) {
                         PhonkNative.nativeAnalyzeAudio(decoded.samples, decoded.sampleRate)
                     }
-                    // Poll for cancellation while native runs
                     while (!future.isCompleted) {
                         if (cancelled) {
+                            PhonkNative.nativeSetAnalysisCancelled(true)
                             future.cancel()
                             throw CancellationException("Analysis cancelled")
                         }
-                        Thread.sleep(50)
+                        delay(50)
                     }
                     future.await()
                 }
+                PhonkNative.nativeSetAnalysisCancelled(false)
                 coroutineContext.ensureActive()
                 val result = AnalysisJson.parseResult(json)
                 val withDuration = result.copy(durationMs = decoded.durationMs)
                 Log.i(TAG, "analyze done beats=" + withDuration.beats.size + " drops=" + withDuration.drops.size + " durationMs=" + withDuration.durationMs)
                 _state.value = AnalysisState.Done(withDuration)
             } catch (e: CancellationException) {
+                PhonkNative.nativeSetAnalysisCancelled(false)
                 _state.value = AnalysisState.Failed("Analysis cancelled")
                 throw e
             } catch (t: Throwable) {
+                PhonkNative.nativeSetAnalysisCancelled(false)
                 Log.e(TAG, "analyze FAILED", t)
                 _state.value = AnalysisState.Failed(
                     t.message ?: t.javaClass.simpleName
@@ -94,5 +99,6 @@ class AnalysisManager(
 
     fun cancel() {
         cancelled = true
+        PhonkNative.nativeSetAnalysisCancelled(true)
     }
 }

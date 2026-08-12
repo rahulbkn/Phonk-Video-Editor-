@@ -45,4 +45,11 @@ object PhonkNative {
     ): String
 
     external fun nativeVersion(): String
+
+    /** Cooperative cancellation flag for native DSP. Set to true to request
+     *  early exit from the next analysis call. */
+    external fun nativeSetAnalysisCancelled(cancelled: Boolean)
+
+    /** Query whether the native side has observed the cancellation flag. */
+    external fun nativeIsAnalysisCancelled(): Boolean
 }

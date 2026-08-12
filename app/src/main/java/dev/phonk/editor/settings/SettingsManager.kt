@@ -115,12 +115,12 @@ object SettingsManager {
 
     fun setThemeMode(context: Context, mode: String) {
         themeMode = mode
-        prefs(context).edit().putString(KEY_THEME, mode).apply()
+        prefs(context).edit().putString(KEY_THEME, mode).commit()
     }
 
     fun setLanguage(context: Context, code: String) {
         languageCode = code
-        prefs(context).edit().putString(KEY_LANGUAGE, code).apply()
+        prefs(context).edit().putString(KEY_LANGUAGE, code).commit()
     }
 
     fun setDebugMode(context: Context, enabled: Boolean) {
@@ -155,12 +155,12 @@ object SettingsManager {
 
     fun setHardwareAccel(context: Context, enabled: Boolean) {
         hardwareAccel = enabled
-        prefs(context).edit().putBoolean(KEY_HARDWARE_ACCEL, enabled).apply()
+        prefs(context).edit().putBoolean(KEY_HARDWARE_ACCEL, enabled).commit()
     }
 
     fun setAddToGallery(context: Context, enabled: Boolean) {
         addToGallery = enabled
-        prefs(context).edit().putBoolean(KEY_ADD_TO_GALLERY, enabled).apply()
+        prefs(context).edit().putBoolean(KEY_ADD_TO_GALLERY, enabled).commit()
     }
 
     fun setDefaultAspect(context: Context, aspect: String) {
@@ -190,7 +190,6 @@ object SettingsManager {
         val code = storedLanguage(base)
         if (code == LANG_SYSTEM) return base
         val locale = Locale.forLanguageTag(code)
-        Locale.setDefault(locale)
         val config = Configuration(base.resources.configuration)
         config.setLocale(locale)
         return base.createConfigurationContext(config)

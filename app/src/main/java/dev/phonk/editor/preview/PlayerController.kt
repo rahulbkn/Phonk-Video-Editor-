@@ -41,8 +41,7 @@ class PlayerController(context: Context) {
 
     fun setVideo(uri: Uri?) {
         if (uri == null) {
-            player.setMediaItem(MediaItem.fromUri(Uri.EMPTY))
-            player.prepare()
+            player.clearMediaItems()
             return
         }
         player.setMediaItem(MediaItem.fromUri(uri))

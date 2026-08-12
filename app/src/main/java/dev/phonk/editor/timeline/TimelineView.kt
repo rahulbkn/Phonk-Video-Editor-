@@ -62,12 +62,12 @@ class TimelineView @JvmOverloads constructor(
     var onSetOverlayTiming: ((id: String, startMs: Long, endMs: Long) -> Unit)? = null
 
     private val tracks = listOf(
-        TrackDef("Video", Color.parseColor("#A855F7")),
-        TrackDef("Audio", Color.parseColor("#A855F7")),
-        TrackDef("Overlay", Color.parseColor("#A855F7")),
-        TrackDef("Text", Color.parseColor("#A855F7")),
-        TrackDef("Effects", Color.parseColor("#6D28D9")),
-        TrackDef("Audio FX", Color.parseColor("#3F3F4E")),
+        TrackDef("Video", context.getColor(R.color.primary)),
+        TrackDef("Audio", context.getColor(R.color.primary)),
+        TrackDef("Overlay", context.getColor(R.color.primary)),
+        TrackDef("Text", context.getColor(R.color.primary)),
+        TrackDef("Effects", context.getColor(R.color.accent)),
+        TrackDef("Audio FX", context.getColor(R.color.border_default)),
     )
 
     private val density get() = resources.displayMetrics.density
@@ -89,7 +89,7 @@ class TimelineView @JvmOverloads constructor(
     private val dropPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val playPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val rulerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 1.5f }
-    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 20f; isFakeBoldText = true }
+    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 20f * density; isFakeBoldText = true }
     private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val clipBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f }
     private val selPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
@@ -183,11 +183,11 @@ class TimelineView @JvmOverloads constructor(
         // 1. Track backgrounds (subtle dark) + labels.
         tracks.forEachIndexed { i, track ->
             val top = trackTop(i)
-            trackPaint.color = Color.parseColor("#1A1A24")
+            trackPaint.color = context.getColor(R.color.surface_track)
             canvas.drawRect(labelZone, top, w - 4f, top + tH - 2f, trackPaint)
-            trackPaint.color = Color.parseColor("#2A2A38")
+            trackPaint.color = context.getColor(R.color.border_default)
             canvas.drawLine(labelZone, top + tH - 2f, w - 4f, top + tH - 2f, trackPaint)
-            labelPaint.color = Color.parseColor("#C9C9D2")
+            labelPaint.color = context.getColor(R.color.text_ruler)
             canvas.drawText(track.label, 6f, top + tH / 2f + 6f, labelPaint)
         }
 
@@ -200,11 +200,11 @@ class TimelineView @JvmOverloads constructor(
         requestThumbnails(wantThumbs)
 
         // 4. Overlay + text bars (with their own keyframes).
-        drawOverlayBars(canvas, labelZone, trackTop(2), tH - 4f, Color.parseColor("#A855F7"), project.overlays)
-        drawOverlayBars(canvas, labelZone, trackTop(3), tH - 4f, Color.parseColor("#A855F7"), project.textLayers)
+        drawOverlayBars(canvas, labelZone, trackTop(2), tH - 4f, context.getColor(R.color.primary), project.overlays)
+        drawOverlayBars(canvas, labelZone, trackTop(3), tH - 4f, context.getColor(R.color.primary), project.textLayers)
 
         // 5. Effect bars on the effects track.
-        drawBars(canvas, labelZone, trackTop(4), tH - 4f, Color.parseColor("#6D28D9"),
+        drawBars(canvas, labelZone, trackTop(4), tH - 4f, context.getColor(R.color.accent),
             project.clips.filter { it.effect != dev.phonk.editor.model.EffectKind.NONE }
                 .map { it.destStartMs to it.destEndMs })
 
@@ -213,7 +213,7 @@ class TimelineView @JvmOverloads constructor(
         drawGradeKeyframes(canvas, labelZone, trackTop(4), tH - 4f)
 
         // 7. Time ruler.
-        drawTimeRuler(canvas, labelZone, w, 4f, 18f, Color.parseColor("#C9C9D2"))
+        drawTimeRuler(canvas, labelZone, w, 4f, 18f, context.getColor(R.color.text_ruler))
 
         // 8. Playhead: thin needle + compact handle (drawn above tracks but
         //    below the trim handles so a nearby handle stays visible).
@@ -221,8 +221,8 @@ class TimelineView @JvmOverloads constructor(
 
         // 9. Selection trim handles on top so the playhead can never hide them.
         drawTrimHandles(canvas, trackTop(0), tH - 4f, primary)
-        drawOverlayTrimHandles(canvas, trackTop(2), tH - 4f, Color.parseColor("#A855F7"), project.overlays)
-        drawOverlayTrimHandles(canvas, trackTop(3), tH - 4f, Color.parseColor("#A855F7"), project.textLayers)
+        drawOverlayTrimHandles(canvas, trackTop(2), tH - 4f, context.getColor(R.color.primary), project.overlays)
+        drawOverlayTrimHandles(canvas, trackTop(3), tH - 4f, context.getColor(R.color.primary), project.textLayers)
 
         // 10. Overlay/text titles re-drawn last so the playhead needle (and
         //     handle) never obscures a layer's label.
@@ -233,7 +233,7 @@ class TimelineView @JvmOverloads constructor(
     private fun drawPlayhead(canvas: Canvas, h: Float) {
         val playX = controller.timeToX(controller.currentMs)
         playPaint.strokeWidth = 2f * density
-        playPaint.color = Color.parseColor("#F5F5F7")
+        playPaint.color = context.getColor(R.color.overlay_handle)
         canvas.drawLine(playX, 4f, playX, h - 8f, playPaint)
         // small diamond handle at the top
         val hs = 5f * density
@@ -243,7 +243,7 @@ class TimelineView @JvmOverloads constructor(
         handlePath.lineTo(playX - hs, topY + hs * 1.7f)
         handlePath.lineTo(playX + hs, topY + hs * 1.7f)
         handlePath.close()
-        handlePaint.color = Color.parseColor("#A855F7")
+        handlePaint.color = context.getColor(R.color.primary)
         canvas.drawPath(handlePath, handlePaint)
     }
 
@@ -253,7 +253,7 @@ class TimelineView @JvmOverloads constructor(
         val x0 = controller.timeToX(if (clipTrimId == clip.id) clipTrimLiveStart else clip.destStartMs)
         val x1 = controller.timeToX(if (clipTrimId == clip.id) clipTrimLiveEnd else clip.destEndMs)
         val hw = 5f * density
-        handlePaint.color = Color.parseColor("#F5F5F7")
+        handlePaint.color = context.getColor(R.color.overlay_handle)
         canvas.drawRect(x0 - hw, top, x0, top + height, handlePaint)
         canvas.drawRect(x1, top, x1 + hw, top + height, handlePaint)
         clipBorder.color = primary
@@ -267,7 +267,7 @@ class TimelineView @JvmOverloads constructor(
         val x0 = controller.timeToX(if (overlayDrag?.id == id) overlayDrag!!.liveStart else item.startMs)
         val x1 = controller.timeToX(if (overlayDrag?.id == id) overlayDrag!!.liveEnd else item.endMs)
         val hw = 5f * density
-        handlePaint.color = Color.parseColor("#F5F5F7")
+        handlePaint.color = context.getColor(R.color.overlay_handle)
         canvas.drawRect(x0 - hw, top, x0, top + height, handlePaint)
         canvas.drawRect(x1, top, x1 + hw, top + height, handlePaint)
         clipBorder.color = color
@@ -275,7 +275,7 @@ class TimelineView @JvmOverloads constructor(
     }
 
     private fun drawBeatsAndDrops(canvas: Canvas, left: Float, right: Float, h: Float, tH: Float) {
-        beatPaint.color = withAlpha(Color.parseColor("#A855F7"), 180)
+        beatPaint.color = withAlpha(context.getColor(R.color.primary), 180)
         project.beats.forEach { beat ->
             val x = controller.timeToX(beat.timestampMs.roundToLong())
             if (x in left..right) {
@@ -287,7 +287,7 @@ class TimelineView @JvmOverloads constructor(
             }
         }
         // drop markers as diamonds on the audio row
-        dropPaint.color = Color.parseColor("#C084FC")
+        dropPaint.color = context.getColor(R.color.accent)
         project.drops.forEach { drop ->
             val x = controller.timeToX(drop.timestampMs.roundToLong())
             if (x in left..right) {
@@ -299,7 +299,7 @@ class TimelineView @JvmOverloads constructor(
 
     /** Grade automation keyframes (real project timestamps) on the effects row. */
     private fun drawGradeKeyframes(canvas: Canvas, left: Float, top: Float, height: Float) {
-        keyPaint.color = Color.parseColor("#FBBF24")
+        keyPaint.color = context.getColor(R.color.keyframe)
         project.gradeKeyframes.forEach { k ->
             val x = controller.timeToX(k.atMs)
             if (x in left..width.toFloat()) {
@@ -389,7 +389,7 @@ class TimelineView @JvmOverloads constructor(
             val leftC = x0.coerceAtLeast(left)
             val rightC = x1.coerceAtMost(w)
             val selected = clip.id == selectedId
-            trackPaint.color = withAlpha(if (selected) primary else Color.parseColor("#A855F7"), if (selected) 160 else 100)
+            trackPaint.color = withAlpha(if (selected) primary else context.getColor(R.color.primary), if (selected) 160 else 100)
             canvas.drawRect(leftC, top, rightC, top + trackH, trackPaint)
 
             drawFilmstrip(canvas, clip, videoUri, x0, x1, leftC, rightC, top, trackH, wantThumbs)
@@ -400,7 +400,7 @@ class TimelineView @JvmOverloads constructor(
                 canvas.drawRect(leftC, top, rightC, top + trackH, selPaint)
             }
             if (!clip.transition.isNullOrBlank() && d0 > 0L) {
-                dropPaint.color = Color.parseColor("#C084FC")
+                dropPaint.color = context.getColor(R.color.accent)
                 canvas.drawCircle(x0, top + trackH / 2f, 5f, dropPaint)
             }
         }
@@ -442,11 +442,11 @@ class TimelineView @JvmOverloads constructor(
                 val dh = bmp.height * scale
                 val dx = cellX + (thumbW - dw) / 2f
                 val dy = top + (cellH - dh) / 2f
-                thumbPaint.color = Color.BLACK
+                thumbPaint.color = context.getColor(R.color.preview_bg)
                 canvas.drawRect(cellX, top, cellX + thumbW, top + cellH, thumbPaint)
                 canvas.drawBitmap(bmp, null, RectF(dx, dy, dx + dw, dy + dh), thumbPaint)
             } else {
-                thumbPaint.color = withAlpha(Color.parseColor("#8B5CF6"), 30)
+                thumbPaint.color = withAlpha(context.getColor(R.color.primary), 30)
                 canvas.drawRect(cellX, top, minOf(cellX + thumbW, rightC), top + cellH, thumbPaint)
                 synchronized(requestedKeys) {
                     if (cellKey !in requestedKeys) {
@@ -519,7 +519,7 @@ class TimelineView @JvmOverloads constructor(
                 canvas.drawRect(x0.coerceAtLeast(left), top, x1.coerceAtMost(w), top + trackH - 4f, selPaint)
             }
             // item keyframes at their real project times
-            keyPaint.color = Color.parseColor("#FBBF24")
+            keyPaint.color = context.getColor(R.color.keyframe)
             item.keyframes.forEach { k ->
                 val kx = controller.timeToX(k.atMs)
                 if (kx >= x0 && kx <= x1) {
@@ -541,8 +541,8 @@ class TimelineView @JvmOverloads constructor(
             val x1 = controller.timeToX(endMs)
             if (x1 < left || x0 > w) continue
             if (x1 - x0 <= 42f) continue
-            textPaint.color = Color.WHITE
-            textPaint.textSize = 18f
+            textPaint.color = context.getColor(R.color.overlay_handle)
+            textPaint.textSize = 18f * density
             val maxChars = ((x1 - x0) / 22f).toInt().coerceIn(1, 10)
             val label = item.label.ifBlank { item.type }
             canvas.drawText(label.take(maxChars), x0 + 6f, top + trackH / 2f + 6f, textPaint)
@@ -668,7 +668,7 @@ class TimelineView @JvmOverloads constructor(
         val start = (controller.visibleRange().first / step) * step
         var t = start
         rulerPaint.color = withAlpha(color, 160)
-        labelPaint.textSize = 16f
+        labelPaint.textSize = 16f * density
         while (t <= controller.visibleRange().last) {
             val x = controller.timeToX(t)
             if (x in left..right) {

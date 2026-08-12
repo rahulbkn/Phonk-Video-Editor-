@@ -1,5 +1,7 @@
 package dev.phonk.editor.ui.components
 
+import dev.phonk.editor.R
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -43,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -68,6 +71,7 @@ object EditorTokens {
     val ToolTarget = 44.dp          // tool / toolbar buttons
     val CompactTarget = 40.dp       // secondary compact controls
     val PrimaryHeight = 48.dp       // primary action buttons
+    val StatusBarHeight = 24.dp     // bottom status bar
 
     // Visual icon sizes (visual can be smaller than the touch target)
     val Icon = 18.dp
@@ -80,7 +84,9 @@ object EditorTokens {
 
     // Spacing scale
     val Space4 = 4.dp
+    val Space6 = 6.dp
     val Space8 = 8.dp
+    val Space10 = 10.dp
     val Space12 = 12.dp
     val Space16 = 16.dp
     val Space20 = 20.dp
@@ -90,9 +96,33 @@ object EditorTokens {
     val FontTool = 12.sp
     val FontCompact = 11.sp
     val FontLabel = 10.sp
+    val FontRuler = 12.sp
+    val FontTrack = 10.sp
     val FontDialogTitle = 18.sp
     val FontDialogBody = 14.sp
     val FontDialogAction = 13.sp
+}
+
+object AppDimens {
+    val screenPadding = 16.dp
+    val screenPaddingLarge = 24.dp
+    val cardPadding = 16.dp
+    val spacingSmall = 8.dp
+    val spacingMedium = 12.dp
+    val spacingLarge = 16.dp
+    val spacingXLarge = 20.dp
+    val cornerRadiusSmall = 8.dp
+    val cornerRadiusMedium = 12.dp
+    val cornerRadiusLarge = 16.dp
+    val cornerRadiusXLarge = 24.dp
+    val buttonHeight = 48.dp
+    val iconSizeSmall = 16.dp
+    val iconSizeMedium = 20.dp
+    val iconSizeLarge = 24.dp
+    val fabSize = 56.dp
+    val bottomNavHeight = 80.dp
+    val topBarHeight = 52.dp
+    val previewMinHeight = 180.dp
 }
 
 private val ActiveGlow = 0.85f
@@ -393,8 +423,8 @@ fun PhonkPanel(
     androidx.compose.foundation.layout.Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF111118))
-            .border(0.5.dp, Color(0xFF25252E)),
+            .background(colorResource(R.color.surface))
+            .border(0.5.dp, colorResource(R.color.border_panel)),
         content = content,
     )
 }
@@ -434,7 +464,7 @@ fun PhonkSeekBar(
     onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier,
     activeColor: Color = MaterialTheme.colorScheme.primary,
-    inactiveColor: Color = Color(0xFF3A3944),
+    inactiveColor: Color = colorResource(R.color.border_default),
     thumbSize: Dp = 12.dp,
     trackHeight: Dp = 4.dp,
 ) {
@@ -490,7 +520,7 @@ fun PhonkProgressBar(
     progress: Float,
     modifier: Modifier = Modifier,
     activeColor: Color = MaterialTheme.colorScheme.primary,
-    trackColor: Color = Color(0xFF26262F),
+    trackColor: Color = colorResource(R.color.surface_control),
     height: Dp = 5.dp,
 ) {
     Box(

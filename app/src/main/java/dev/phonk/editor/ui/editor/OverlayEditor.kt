@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
@@ -27,6 +29,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import dev.phonk.editor.R
 import dev.phonk.editor.model.OverlayFx
 import dev.phonk.editor.model.OverlayItem
 import dev.phonk.editor.model.evaluateOverlayFx
@@ -421,7 +424,7 @@ fun BoxScope.OverlayEditorLayer(
                                 .offset(x = 18.dp, y = -18.dp)
                                 .size(18.dp)
                                 .graphicsLayer { rotationZ = -fx.rotation }
-                                .background(Color(0xFFE53935), CircleShape)
+                                .background(MaterialTheme.colorScheme.error, CircleShape)
                                 .border(1.dp, Color.White.copy(alpha = 0.7f), CircleShape),
                         )
                     }
@@ -434,7 +437,7 @@ fun BoxScope.OverlayEditorLayer(
                 Modifier
                     .offset { IntOffset(x.toInt(), 0) }
                     .size(1.dp, with(density) { boxHpx.dp })
-                    .background(Color(0xFF00E5FF).copy(alpha = 0.7f)),
+                    .background(colorResource(R.color.audio_fx).copy(alpha = 0.7f)),
             )
         }
         snapH?.let { y ->
@@ -442,7 +445,7 @@ fun BoxScope.OverlayEditorLayer(
                 Modifier
                     .offset { IntOffset(0, y.toInt()) }
                     .size(with(density) { boxWpx.dp }, 1.dp)
-                    .background(Color(0xFF00E5FF).copy(alpha = 0.7f)),
+                    .background(colorResource(R.color.audio_fx).copy(alpha = 0.7f)),
             )
         }
     }

@@ -93,14 +93,12 @@ fun PhonkApp() {
                 navViewModel.navigateTo(Route.Settings)
             },
             onNavigate = { tab ->
-                navViewModel.navigateTo(
-                    when (tab) {
-                        NavTab.PROJECTS -> Route.Projects
-                        NavTab.BEATS -> Route.Beats
-                        NavTab.PROFILE -> Route.Profile
-                        else -> Route.Home
-                    }
-                )
+                when (tab) {
+                    NavTab.PROJECTS -> navViewModel.navigateTo(Route.Projects)
+                    NavTab.BEATS -> navViewModel.navigateTo(Route.Beats)
+                    NavTab.PROFILE -> navViewModel.navigateTo(Route.Profile)
+                    else -> Unit
+                }
             },
         )
         Route.Projects -> ProjectsScreen(

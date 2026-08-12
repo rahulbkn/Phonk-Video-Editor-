@@ -45,4 +45,24 @@
     <color name="crash_error">@color/error</color>
     <color name="crash_accent">@color/accent</color>
     <color name="crash_on_primary">@color/on_primary</color>
+
+    <!-- Editor dark-surface colors (used in editor even in light mode) -->
+    <color name="surface_elevated">#1A1A24</color>
+    <color name="surface_timeline">#14141C</color>
+    <color name="surface_track">#111117</color>
+    <color name="surface_panel">#121219</color>
+    <color name="surface_control">#17171F</color>
+    <color name="border_default">#2A2A36</color>
+    <color name="border_subtle">#1E1E28</color>
+    <color name="border_panel">#25252E</color>
+    <color name="text_ruler">#9E9EAE</color>
+    <color name="text_muted">#6B6B7B</color>
+    <color name="text_disabled">#B8B8C4</color>
+    <color name="text_status">#6B6B7B</color>
+    <color name="text_progress">#6B6B7B</color>
+    <color name="text_on_surface">#1A1A24</color>
+    <color name="keyframe">#7C3AED</color>
+    <color name="audio_fx">#39D7B1</color>
+    <color name="toolbar_bg">#0B0B10</color>
+    <color name="preview_bg">#0B0B10</color>
 </resources>

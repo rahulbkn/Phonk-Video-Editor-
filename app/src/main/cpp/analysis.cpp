@@ -1,6 +1,7 @@
 #include "analysis.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <iomanip>
@@ -11,6 +12,11 @@ namespace phonk {
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
+
+// Cooperative analysis cancellation flag. The JNI layer sets this from
+// Kotlin when the user taps "cancel"; the DSP loop polls it so the native
+// thread can exit early instead of burning CPU to completion.
+static std::atomic<bool> g_analysisCancelled{false};
 
 void normalize(std::vector<double>& v) {
     double mx = 0.0;
@@ -54,6 +60,15 @@ std::vector<double> downsample(const std::vector<double>& src, size_t max) {
 }
 
 }  // namespace
+
+// ---------------------------------------------------------------------------
+void setAnalysisCancelled(bool v) {
+    g_analysisCancelled.store(v);
+}
+
+bool isAnalysisCancelled() {
+    return g_analysisCancelled.load();
+}
 
 // ---------------------------------------------------------------------------
 void fft(double* re, double* im, std::size_t n, bool inverse) {
@@ -131,6 +146,19 @@ AnalysisFeatures extractFeatures(const float* pcm, size_t count, int sampleRate)
     const size_t snareHi = static_cast<size_t>(5000.0 / binHz);
 
     for (size_t n = 0; n < nFrames; ++n) {
+        if (isAnalysisCancelled()) {
+            // Return partially built features so the caller can abort cleanly.
+            f.frameCount = n;
+            f.rms.resize(n);
+            f.flux.resize(n);
+            f.bassEnergy.resize(n);
+            f.kickEnv.resize(n);
+            f.snareEnv.resize(n);
+            f.spectralCentroid.resize(n);
+            f.spectralFlatness.resize(n);
+            f.onsetEnvelope.resize(n);
+            return f;
+        }
         size_t start = n * f.hopSize;
         double energy = 0.0;
         for (size_t i = 0; i < f.windowSize; ++i) {
@@ -495,7 +523,10 @@ AnalysisResult analyzeAudio(const float* pcm, size_t count, int sampleRate) {
     res.durationMs = count > 0 ? static_cast<double>(count) * 1000.0 / sampleRate : 0.0;
     if (count < 1024) return res;
 
+    if (isAnalysisCancelled()) return res;
+
     AnalysisFeatures feat = extractFeatures(pcm, count, sampleRate);
+    if (isAnalysisCancelled()) return res;
     res.bpm = estimateBpm(feat);
 
     std::vector<size_t> beatFrames = detectBeatFrames(feat, res.bpm);
