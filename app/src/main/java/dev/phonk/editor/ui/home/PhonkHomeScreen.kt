@@ -1,6 +1,5 @@
 package dev.phonk.editor.ui.home
 
-import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -8,20 +7,9 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -33,28 +21,25 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
-import androidx.core.view.WindowCompat
 import dev.phonk.editor.R
 import dev.phonk.editor.analysis.AudioExtractor
 import dev.phonk.editor.model.OverlayLayer
 import dev.phonk.editor.model.PhonkProject
 import dev.phonk.editor.project.ProjectStore
-import dev.phonk.editor.settings.SettingsManager
 import dev.phonk.editor.ui.RenameProjectDialog
 import dev.phonk.editor.ui.components.NavTab
+import dev.phonk.editor.ui.components.PhonkTabScaffold
+import dev.phonk.editor.ui.components.UiDimens
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -66,6 +51,9 @@ import java.util.Locale
  * Real, data-driven UI: projects come from [ProjectStore], every card/button
  * maps to a real action (editor, templates, settings, pro, creation sheet)
  * and the layout is fully responsive (dp/sp + LazyRow/LazyColumn + insets).
+ * The shared [PhonkTabScaffold] owns status-bar insets, the background and
+ * the floating bottom navigation so content can never be hidden behind the
+ * system bars or the nav.
  */
 @Composable
 fun PhonkHomeScreen(
@@ -77,7 +65,6 @@ fun PhonkHomeScreen(
     openCreateSheet: Boolean = false,
     onCreateSheetHandled: () -> Unit = {},
 ) {
-    val palette = homePalette()
     val context = LocalContext.current
     val store = remember(context) { ProjectStore(context) }
 
@@ -284,38 +271,23 @@ fun PhonkHomeScreen(
         },
     )
 
-    // ─── Status bar: always light icons over the dark home background ──────
-    val view = LocalView.current
-    val darkTheme = when (SettingsManager.themeMode) {
-        SettingsManager.THEME_LIGHT -> false
-        SettingsManager.THEME_DARK -> true
-        else -> isSystemInDarkTheme()
-    }
-    DisposableEffect(view, darkTheme) {
-        val window = (view.context as? Activity)?.window
-        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
-        controller?.isAppearanceLightStatusBars = false
-        controller?.isAppearanceLightNavigationBars = false
-        onDispose {
-            controller?.isAppearanceLightStatusBars = !darkTheme
-            controller?.isAppearanceLightNavigationBars = !darkTheme
-        }
-    }
-
-    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(palette.background),
+    PhonkTabScaffold(
+        activeTab = NavTab.HOME,
+        onTabSelected = { tab ->
+            when (tab) {
+                NavTab.CREATE -> showCreateSheet = true
+                NavTab.HOME -> Unit
+                else -> onNavigate(tab)
+            }
+        },
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = HomeTokens.ScreenHorizontal,
                 end = HomeTokens.ScreenHorizontal,
-                top = 12.dp,
-                bottom = bottomInset + 96.dp,
+                top = UiDimens.spaceSm,
+                bottom = UiDimens.navBarContentBottom,
             ),
             verticalArrangement = Arrangement.spacedBy(HomeTokens.SectionSpacing),
         ) {
@@ -352,29 +324,6 @@ fun PhonkHomeScreen(
             item {
                 AIToolsSection(tools = aiTools)
             }
-            item {
-                Spacer(Modifier.height(8.dp))
-            }
-        }
-
-        // ─── Bottom navigation (floating, fixed) ───────────────────────────
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp)
-                .padding(bottom = bottomInset + 6.dp),
-        ) {
-            BottomNav(
-                activeTab = NavTab.HOME,
-                onTabSelected = { tab ->
-                    when (tab) {
-                        NavTab.CREATE -> showCreateSheet = true
-                        NavTab.HOME -> Unit
-                        else -> onNavigate(tab)
-                    }
-                },
-            )
         }
     }
 

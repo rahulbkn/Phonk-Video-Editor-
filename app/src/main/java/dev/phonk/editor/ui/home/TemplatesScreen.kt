@@ -11,25 +11,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,7 +34,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -50,10 +43,14 @@ import androidx.compose.ui.unit.sp
 import dev.phonk.editor.R
 import dev.phonk.editor.model.PhonkProject
 import dev.phonk.editor.ui.components.NavTab
+import dev.phonk.editor.ui.components.PhonkTabScaffold
+import dev.phonk.editor.ui.components.TabScreenHeader
 
 /**
  * Templates screen — ready-made style presets. Applying a template creates a
- * real project (named after the preset) and opens the editor.
+ * real project (named after the preset) and opens the editor. Uses the shared
+ * [PhonkTabScaffold] so the floating navigation and system insets behave
+ * exactly like Home / Projects / Profile.
  */
 @Composable
 fun TemplatesScreen(
@@ -77,136 +74,101 @@ fun TemplatesScreen(
         }
     }
 
-    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(palette.background)
-            .padding(top = topInset),
+    PhonkTabScaffold(
+        activeTab = NavTab.TEMPLATES,
+        onTabSelected = { tab ->
+            if (tab == NavTab.TEMPLATES) return@PhonkTabScaffold
+            when (tab) {
+                NavTab.HOME -> onBack()
+                else -> onNavigate(tab)
+            }
+        },
     ) {
-        // ─── Header ────────────────────────────────────────────────────────
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 8.dp, end = 20.dp, top = 4.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = stringResource(R.string.back),
-                    tint = palette.text,
-                )
-            }
-            Column {
-                Text(
-                    text = stringResource(R.string.templates_title),
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.text,
-                )
-                Text(
-                    text = stringResource(R.string.templates_subtitle),
-                    fontSize = 12.sp,
-                    color = palette.textSecondary,
-                )
-            }
-        }
+        Column(modifier = modifier.fillMaxSize()) {
+            // ─── Header ────────────────────────────────────────────────────
+            TabScreenHeader(
+                title = stringResource(R.string.templates_title),
+                subtitle = stringResource(R.string.templates_subtitle),
+                onBack = onBack,
+            )
 
-        // ─── Search ────────────────────────────────────────────────────────
-        SearchField(query = query, onQueryChange = { query = it })
-        Spacer(Modifier.height(12.dp))
+            // ─── Search ────────────────────────────────────────────────────
+            SearchField(query = query, onQueryChange = { query = it })
+            Spacer(Modifier.height(12.dp))
 
-        // ─── Categories ────────────────────────────────────────────────────
-        val categories = listOf("All", "Phonk", "Beat", "Dark", "Glitch", "Retro")
-        androidx.compose.foundation.lazy.LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(horizontal = 20.dp),
-        ) {
-            items(categories.size) { i ->
-                val c = categories[i]
-                val selected = c == category
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(99.dp))
-                        .background(if (selected) palette.primary.copy(alpha = 0.22f) else palette.card)
-                        .border(
-                            1.dp,
-                            if (selected) palette.primary else palette.border,
-                            RoundedCornerShape(99.dp),
-                        )
-                        .clickable { category = c }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                ) {
-                    Text(
-                        text = c,
-                        fontSize = 13.sp,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (selected) palette.primaryBright else palette.textSecondary,
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            // ─── Grid ──────────────────────────────────────────────────────
-            if (filtered.isEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(40.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(
-                        text = stringResource(R.string.templates_empty),
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = palette.text,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = stringResource(R.string.templates_empty_desc),
-                        fontSize = 13.sp,
-                        color = palette.textSecondary,
-                    )
-                }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = bottomInset + 96.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(filtered, key = { it.id }) { template ->
-                        TemplateCard(
-                            template = template,
-                            onUse = { applied = applyTemplate(template) },
+            // ─── Categories ────────────────────────────────────────────────
+            val categories = listOf("All", "Phonk", "Beat", "Dark", "Glitch", "Retro")
+            androidx.compose.foundation.lazy.LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = 20.dp),
+            ) {
+                items(categories.size) { i ->
+                    val c = categories[i]
+                    val selected = c == category
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(99.dp))
+                            .background(if (selected) palette.primary.copy(alpha = 0.22f) else palette.card)
+                            .border(
+                                1.dp,
+                                if (selected) palette.primary else palette.border,
+                                RoundedCornerShape(99.dp),
+                            )
+                            .clickable { category = c }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            text = c,
+                            fontSize = 13.sp,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (selected) palette.primaryBright else palette.textSecondary,
                         )
                     }
                 }
             }
+            Spacer(Modifier.height(16.dp))
 
-            // ─── Bottom navigation (floating, fixed) ───────────────────────
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp)
-                    .padding(bottom = bottomInset + 6.dp),
-            ) {
-                BottomNav(
-                    activeTab = NavTab.TEMPLATES,
-                    onTabSelected = { tab ->
-                        if (tab == NavTab.TEMPLATES) return@BottomNav
-                        when (tab) {
-                            NavTab.HOME -> onBack()
-                            else -> onNavigate(tab)
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                // ─── Grid ──────────────────────────────────────────────────
+                if (filtered.isEmpty()) {
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(40.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.templates_empty),
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = palette.text,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = stringResource(R.string.templates_empty_desc),
+                            fontSize = 13.sp,
+                            color = palette.textSecondary,
+                        )
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        contentPadding = PaddingValues(
+                            start = 20.dp,
+                            end = 20.dp,
+                            bottom = 16.dp,
+                        ),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(filtered, key = { it.id }) { template ->
+                            TemplateCard(
+                                template = template,
+                                onUse = { applied = applyTemplate(template) },
+                            )
                         }
-                    },
-                )
+                    }
+                }
             }
         }
     }

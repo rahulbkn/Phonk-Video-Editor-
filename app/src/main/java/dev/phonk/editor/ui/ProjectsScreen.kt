@@ -11,30 +11,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,17 +34,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
+import androidx.compose.ui.unit.sp
 import dev.phonk.editor.R
 import dev.phonk.editor.analysis.AudioExtractor
 import dev.phonk.editor.model.PhonkProject
 import dev.phonk.editor.project.ProjectStore
 import dev.phonk.editor.ui.components.NavTab
+import dev.phonk.editor.ui.components.PhonkTabScaffold
+import dev.phonk.editor.ui.components.TabScreenHeader
 import dev.phonk.editor.ui.components.UiDimens
-import dev.phonk.editor.ui.home.BottomNav
-import dev.phonk.editor.util.ThumbnailLoader
+import dev.phonk.editor.ui.home.HomeTokens
+import dev.phonk.editor.ui.home.homePalette
 
 private fun queryName(resolver: android.content.ContentResolver, uri: Uri): String {
     resolver.query(uri, null, null, null, null)?.use { c ->
@@ -71,7 +57,11 @@ private fun queryName(resolver: android.content.ContentResolver, uri: Uri): Stri
     return "Untitled"
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Projects screen — full list of the user's projects. Uses the same shared
+ * dark design system, spacing, insets and floating bottom navigation as the
+ * Home screen so the two screens feel like one application.
+ */
 @Composable
 fun ProjectsScreen(
     onBack: () -> Unit,
@@ -82,6 +72,7 @@ fun ProjectsScreen(
     val store = remember(context) { ProjectStore(context) }
     var projects by remember { mutableStateOf<List<PhonkProject>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    val palette = homePalette()
 
     fun refresh() {
         isLoading = true
@@ -115,113 +106,92 @@ fun ProjectsScreen(
         }
     }
 
-    val scheme = MaterialTheme.colorScheme
+    PhonkTabScaffold(
+        activeTab = NavTab.PROJECTS,
+        onTabSelected = { tab ->
+            if (tab != NavTab.PROJECTS) onNavigate(tab)
+        },
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            TabScreenHeader(
+                title = stringResource(R.string.nav_projects),
+                onBack = onBack,
+            )
 
-    Scaffold(
-        containerColor = Color.Transparent,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(R.string.nav_projects),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.back),
-                        )
-                    }
-                },
-                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                ),
-            )
-        },
-        bottomBar = {
-            BottomNav(
-                activeTab = NavTab.PROJECTS,
-                onTabSelected = { tab ->
-                    if (tab == NavTab.PROJECTS) return@BottomNav
-                    onNavigate(tab)
-                },
-            )
-        },
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0f to scheme.background,
-                        1f to scheme.surfaceContainerLowest,
-                    )
-                ),
-        ) {
-            if (isLoading) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = stringResource(R.string.loading),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = scheme.onSurfaceVariant,
-                    )
-                }
-            } else if (projects.isEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                        .padding(horizontal = UiDimens.screenPadding),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(
-                        text = stringResource(R.string.empty_no_projects),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = scheme.onSurface,
-                    )
-                    Spacer(Modifier.height(UiDimens.spaceSm))
-                    Text(
-                        text = stringResource(R.string.empty_no_projects_subtitle),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = scheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(UiDimens.spaceXl))
-                    TextButton(
-                        onClick = { launcher.launch(arrayOf("video/*", "application/mp4")) },
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Text(stringResource(R.string.open_video))
-                    }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentPadding = PaddingValues(
-                        start = UiDimens.screenPadding,
-                        end = UiDimens.screenPadding,
-                        top = UiDimens.spaceLg,
-                        bottom = 100.dp,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(UiDimens.itemSpacing),
-                ) {
-                    items(projects) { project ->
-                        ProjectCard(
-                            project = project,
-                            onOpen = { onOpen(project) },
-                            onDelete = {
-                                store.delete(project.id)
-                                refresh()
-                            },
+                        Text(
+                            text = stringResource(R.string.loading),
+                            fontSize = UiDimens.textSizeMd,
+                            color = palette.textSecondary,
                         )
+                    }
+                } else if (projects.isEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = UiDimens.screenPadding),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.empty_no_projects),
+                            fontSize = UiDimens.textSizeSectionTitle,
+                            fontWeight = FontWeight.SemiBold,
+                            color = palette.text,
+                        )
+                        Spacer(Modifier.height(UiDimens.spaceSm))
+                        Text(
+                            text = stringResource(R.string.empty_no_projects_subtitle),
+                            fontSize = UiDimens.textSizeMd,
+                            color = palette.textSecondary,
+                        )
+                        Spacer(Modifier.height(UiDimens.spaceXl))
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(palette.primary, palette.primaryBright),
+                                    )
+                                )
+                                .clickable { launcher.launch(arrayOf("video/*", "application/mp4")) },
+                        ) {
+                            Text(
+                                text = stringResource(R.string.open_video),
+                                fontSize = UiDimens.textSizeButton,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = HomeTokens.ScreenHorizontal,
+                            end = HomeTokens.ScreenHorizontal,
+                            top = UiDimens.spaceSm,
+                            bottom = HomeTokens.ScreenHorizontal,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(UiDimens.itemSpacing),
+                    ) {
+                        items(projects) { project ->
+                            ProjectCard(
+                                project = project,
+                                onOpen = { onOpen(project) },
+                                onDelete = {
+                                    store.delete(project.id)
+                                    refresh()
+                                },
+                            )
+                        }
                     }
                 }
             }

@@ -38,8 +38,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.phonk.editor.R
 
+private val HeaderButtonCorner = 14.dp
+
 /**
  * PHONK EDITOR header — logo mark on the left, Pro + Settings on the right.
+ * Rows are vertically centred so the mark, wordmark and actions share one
+ * clean horizontal line below the status bar.
  */
 @Composable
 fun PhonkHeader(
@@ -59,8 +63,8 @@ fun PhonkHeader(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(46.dp)
-                    .shadow(10.dp, RoundedCornerShape(14.dp))
-                    .clip(RoundedCornerShape(14.dp))
+                    .shadow(10.dp, RoundedCornerShape(HeaderButtonCorner))
+                    .clip(RoundedCornerShape(HeaderButtonCorner))
                     .background(
                         Brush.linearGradient(
                             listOf(palette.primary, palette.primaryBright),
@@ -79,17 +83,18 @@ fun PhonkHeader(
                 Text(
                     text = stringResource(R.string.home_brand_title),
                     fontSize = 21.sp,
+                    lineHeight = 24.sp,
                     fontWeight = FontWeight.Bold,
                     fontStyle = FontStyle.Italic,
                     letterSpacing = 1.sp,
                     color = palette.text,
-                    lineHeight = 20.sp,
                 )
                 Text(
                     text = stringResource(R.string.home_brand_subtitle),
                     fontSize = 10.sp,
+                    lineHeight = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 5.sp,
+                    letterSpacing = 4.sp,
                     color = palette.primaryBright,
                 )
             }
@@ -120,13 +125,13 @@ private fun ProButton(onClick: () -> Unit) {
             .height(44.dp)
             .shadow(
                 elevation = if (pressed) 14.dp else 8.dp,
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(HeaderButtonCorner),
                 ambientColor = palette.primary.copy(alpha = glowAlpha),
                 spotColor = palette.primary.copy(alpha = glowAlpha),
             )
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(HeaderButtonCorner))
             .background(palette.cardSecondary)
-            .border(1.dp, palette.primary.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
+            .border(1.dp, palette.primary.copy(alpha = 0.45f), RoundedCornerShape(HeaderButtonCorner))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp),
     ) {
@@ -159,9 +164,9 @@ private fun SettingsButton(onClick: () -> Unit) {
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .size(44.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(HeaderButtonCorner))
             .background(if (pressed) palette.cardSecondary else palette.card)
-            .border(1.dp, palette.border, RoundedCornerShape(14.dp))
+            .border(1.dp, palette.border, RoundedCornerShape(HeaderButtonCorner))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
     ) {
         Icon(

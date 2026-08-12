@@ -7,12 +7,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -45,8 +43,9 @@ import androidx.compose.ui.unit.sp
 import dev.phonk.editor.R
 
 /**
- * Large hero card: headline, description, purple "New Project" CTA and the
- * neon phonk night-city artwork on the right.
+ * Large hero card: headline, description and a full-width purple
+ * "New Project" CTA. The layout is fully responsive — the headline wraps
+ * naturally on narrow screens instead of being squeezed by fixed artwork.
  */
 @Composable
 fun HeroBanner(
@@ -81,50 +80,31 @@ fun HeroBanner(
             }
             .padding(20.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.home_tagline_1),
-                    fontSize = 28.sp,
-                    lineHeight = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.text,
-                )
-                Text(
-                    text = stringResource(R.string.home_tagline_2),
-                    fontSize = 28.sp,
-                    lineHeight = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.primaryBright,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.home_hero_description),
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp,
-                    color = palette.textSecondary,
-                )
-            }
-
-            // ─── Hero artwork (right portion) ───────────────────────────────
-            Box(
-                modifier = Modifier
-                    .width(118.dp)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(14.dp)),
-            ) {
-                PhonkArtwork(
-                    modifier = Modifier.fillMaxHeight().width(118.dp),
-                    accent = palette.primary,
-                    accentBright = palette.primaryBright,
-                )
-            }
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = stringResource(R.string.home_tagline_1),
+                fontSize = 28.sp,
+                lineHeight = 34.sp,
+                fontWeight = FontWeight.Bold,
+                color = palette.text,
+            )
+            Text(
+                text = stringResource(R.string.home_tagline_2),
+                fontSize = 28.sp,
+                lineHeight = 34.sp,
+                fontWeight = FontWeight.Bold,
+                color = palette.primaryBright,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = stringResource(R.string.home_hero_description),
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                color = palette.textSecondary,
+            )
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(18.dp))
 
         // ─── New Project CTA ────────────────────────────────────────────────
         NewProjectButton(onClick = onCreateProject)

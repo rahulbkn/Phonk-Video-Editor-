@@ -23,6 +23,10 @@ object UiDimens {
     val gridSpacing = 12.dp
     val floatingNavPadding = 14.dp
 
+    // Bottom navigation
+    val navBarBottomSpacing = 6.dp
+    val navBarContentBottom = 16.dp
+
     // Bar heights
     val toolbarHeight = 52.dp
     val subToolbarHeight = 44.dp

@@ -46,6 +46,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.phonk.editor.R
 import dev.phonk.editor.model.PhonkProject
+import dev.phonk.editor.ui.components.UiDimens
+import dev.phonk.editor.ui.home.HomeTokens
+import dev.phonk.editor.ui.home.homePalette
 import dev.phonk.editor.util.ThumbnailLoader
 import dev.phonk.editor.util.TimeUtils.formatClock
 
@@ -62,7 +65,7 @@ internal fun ProjectCard(
     onDuplicate: (PhonkProject) -> Unit = {},
     onShare: (PhonkProject) -> Unit = {},
 ) {
-    val scheme = MaterialTheme.colorScheme
+    val palette = homePalette()
     val context = LocalContext.current
     var thumb by remember(project.id) { mutableStateOf(ThumbnailLoader.peek(project.id)) }
     var menuExpanded by remember { mutableStateOf(false) }
@@ -72,8 +75,8 @@ internal fun ProjectCard(
     }
 
     Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = scheme.surface),
+        shape = RoundedCornerShape(HomeTokens.CardCorner),
+        colors = CardDefaults.cardColors(containerColor = palette.card),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -89,8 +92,8 @@ internal fun ProjectCard(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(80.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(thumbGradient(scheme, project.id)),
+                    .clip(RoundedCornerShape(UiDimens.cornerRadiusMd))
+                    .background(thumbGradient(palette, project.id)),
             ) {
                 thumb?.let { bmp ->
                     Image(
@@ -99,7 +102,7 @@ internal fun ProjectCard(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxSize()
-                            .clip(RoundedCornerShape(12.dp)),
+                            .clip(RoundedCornerShape(UiDimens.cornerRadiusMd)),
                     )
                 }
                 Box(
@@ -123,7 +126,7 @@ internal fun ProjectCard(
                     text = project.name,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = scheme.onSurface,
+                    color = palette.text,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -137,7 +140,7 @@ internal fun ProjectCard(
                     Text(
                         text = stringResource(R.string.bpm_value, project.bpm),
                         style = MaterialTheme.typography.bodySmall,
-                        color = scheme.primary,
+                        color = palette.primaryBright,
                         fontWeight = FontWeight.Medium,
                     )
                     Spacer(Modifier.height(2.dp))
@@ -150,7 +153,7 @@ internal fun ProjectCard(
                         stringResource(R.string.home_not_analyzed)
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = scheme.onSurfaceVariant,
+                    color = palette.textSecondary,
                 )
 
                 if (duration != null) {
@@ -159,12 +162,12 @@ internal fun ProjectCard(
                         Text(
                             text = duration,
                             style = MaterialTheme.typography.labelSmall,
-                            color = scheme.onSurfaceVariant,
+                            color = palette.textSecondary,
                         )
                         Text(
                             text = "  •  ${formatRelativeTime(project.updatedAt)}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = scheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            color = palette.textSecondary.copy(alpha = 0.7f),
                         )
                     }
                 }
@@ -177,7 +180,7 @@ internal fun ProjectCard(
                     Icon(
                         imageVector = Icons.Filled.MoreVert,
                         contentDescription = stringResource(R.string.project_menu),
-                        tint = scheme.onSurfaceVariant,
+                        tint = palette.textSecondary,
                         modifier = Modifier.size(20.dp),
                     )
                 }
@@ -186,21 +189,21 @@ internal fun ProjectCard(
                     onDismissRequest = { menuExpanded = false },
                 ) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.rename_project)) },
+                        text = { Text(stringResource(R.string.rename_project), color = palette.text) },
                         onClick = {
                             menuExpanded = false
                             onRename(project)
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.duplicate_project)) },
+                        text = { Text(stringResource(R.string.duplicate_project), color = palette.text) },
                         onClick = {
                             menuExpanded = false
                             onDuplicate(project)
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.share_project)) },
+                        text = { Text(stringResource(R.string.share_project), color = palette.text) },
                         onClick = {
                             menuExpanded = false
                             onShare(project)
@@ -210,7 +213,7 @@ internal fun ProjectCard(
                         text = {
                             Text(
                                 text = stringResource(R.string.delete_project),
-                                color = scheme.error,
+                                color = MaterialTheme.colorScheme.error,
                             )
                         },
                         onClick = {
@@ -239,10 +242,10 @@ private fun formatRelativeTime(updatedAt: Long): String {
 }
 
 @Composable
-private fun thumbGradient(scheme: androidx.compose.material3.ColorScheme, id: String): Brush =
+private fun thumbGradient(palette: dev.phonk.editor.ui.home.PhonkHomePalette, id: String): Brush =
     Brush.linearGradient(
         listOf(
-            scheme.primary.copy(alpha = 0.55f + (id.hashCode().and(3)) * 0.1f),
-            scheme.surfaceVariant,
+            palette.primary.copy(alpha = 0.55f + (id.hashCode().and(3)) * 0.1f),
+            palette.card,
         ),
     )
