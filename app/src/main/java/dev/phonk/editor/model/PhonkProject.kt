@@ -72,6 +72,10 @@ data class PhonkProject(
     val audioDucking: Boolean = false,
     /** Voice-over / background music track URI mixed under the video audio. */
     val voiceOverUri: String? = null,
+    /** Independent audio items, each on its own timeline row (music/VO/SFX).
+     *  Kept separate from [audioUri]/[voiceOverUri] so the timeline supports
+     *  many simultaneous audio clips instead of exactly one. */
+    val audioItems: List<AudioItem> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 ) {
@@ -211,6 +215,23 @@ data class TextLayer(
     override val label: String get() = text
 }
 
+/** One independent audio clip on its own timeline row.
+ *  Multiple audio items may overlap in time; each keeps its own id, window,
+ *  volume and row so drag/resize/select affect exactly one clip. */
+data class AudioItem(
+    val id: String = java.util.UUID.randomUUID().toString().take(8),
+    /** Media uri of the audio file. */
+    val uri: String? = null,
+    /** User-facing label shown on the row and timeline bar. */
+    val label: String = "Audio",
+    val startMs: Long = 0L,
+    val endMs: Long = 3000L,
+    /** Playback volume for this clip (0..1), independent of the master volume. */
+    val volume: Float = 1f,
+    /** Draw order within the audio section; higher = lower (later) row. */
+    val rowOrder: Int = 0,
+)
+
 /** An image/shape overlay anchored on the destination timeline. */
 data class OverlayLayer(
     override val id: String = java.util.UUID.randomUUID().toString().take(8),
@@ -282,6 +303,7 @@ enum class EffectKind(val wire: String) {
 
 /** Effects that are attached to a clip (not to the global timeline). */
 data class ClipEffect(
+    val id: String = java.util.UUID.randomUUID().toString().take(8),
     val clipId: String,
     val kind: EffectKind,
     val t0Ms: Long,
@@ -357,6 +379,7 @@ class ProjectCodec {
         }})
         o.put("effects", JSONArray().also { arr -> p.effects.forEach { e ->
             arr.put(JSONObject()
+                .put("id", e.id)
                 .put("clipId", e.clipId)
                 .put("kind", e.kind.wire)
                 .put("t0Ms", e.t0Ms)
@@ -481,6 +504,16 @@ class ProjectCodec {
             .put("aspectRatio", p.crop.aspectRatio))
         o.put("audioDucking", p.audioDucking)
         o.put("voiceOverUri", p.voiceOverUri)
+        o.put("audioItems", JSONArray().also { arr -> p.audioItems.forEach { a ->
+            arr.put(JSONObject()
+                .put("id", a.id)
+                .put("uri", a.uri)
+                .put("label", a.label)
+                .put("startMs", a.startMs)
+                .put("endMs", a.endMs)
+                .put("volume", a.volume.toDouble())
+                .put("rowOrder", a.rowOrder))
+        }})
         val ex = JSONObject()
         ex.put("resolution", p.export.resolution.name)
         ex.put("fps", p.export.fps.fps)
@@ -554,9 +587,30 @@ class ProjectCodec {
             audioDucking = o.optBoolean("audioDucking", false),
             voiceOverUri = if (o.has("voiceOverUri") && !o.isNull("voiceOverUri"))
                 o.optString("voiceOverUri", null) else null,
+            audioItems = parseAudioItems(o.optJSONArray("audioItems")),
             createdAt = o.optLong("createdAt", System.currentTimeMillis()),
             updatedAt = o.optLong("updatedAt", System.currentTimeMillis()),
         )
+    }
+
+    private fun parseAudioItems(arr: JSONArray?): List<AudioItem> {
+        if (arr == null) return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val a = arr.optJSONObject(i) ?: continue
+                add(
+                    AudioItem(
+                        id = a.optString("id", ""),
+                        uri = if (a.has("uri") && !a.isNull("uri")) a.optString("uri", null) else null,
+                        label = a.optString("label", "Audio"),
+                        startMs = a.optLong("startMs", 0L),
+                        endMs = a.optLong("endMs", 3000L),
+                        volume = a.optDouble("volume", 1.0).toFloat().coerceIn(0f, 1f),
+                        rowOrder = a.optInt("rowOrder", 0),
+                    )
+                )
+            }
+        }
     }
 
     private fun parseBeats(arr: JSONArray?): List<BeatMarker> {
@@ -644,6 +698,7 @@ class ProjectCodec {
                 val e = arr.optJSONObject(i) ?: continue
                 add(
                     ClipEffect(
+                        id = e.optString("id", ""),
                         clipId = e.optString("clipId", ""),
                         kind = EffectKind.fromWire(e.optString("kind", "none")),
                         t0Ms = e.optLong("t0Ms", 0L),

@@ -33,10 +33,11 @@ private data class TrackDef(val label: String, val color: Int)
  *   1. selected clip left trim handle
  *   2. selected clip right trim handle
  *   3. selected overlay/text bar (trim handles, then body move)
- *   4. playhead
+ *   4. playhead (full-height grab band of [playSlopPx] around the needle)
  *   5. empty-timeline seek
  *   6. ruler drag = horizontal scroll
- * The first match owns the whole gesture until release.
+ * The first match owns the whole gesture until release, so a layer body drag
+ * always beats the playhead and the needle can never intercept a layer.
  */
 class TimelineView @JvmOverloads constructor(
     context: Context,
@@ -74,14 +75,14 @@ class TimelineView @JvmOverloads constructor(
 
     // Ruler occupies the top of the view; tracks render below it. All layout
     // metrics are density-scaled so the timeline reads identically on every
-    // device. The label column now shows per-track colored icons instead of
-    // text titles, so it is narrower than before.
+    // device. The label column shows per-track colored icons instead of
+    // text titles, so it stays narrow and gives the time axis more room.
     private val rulerH get() = 26f * density
     private val trackAreaTop get() = rulerH + 6f * density
-    private val trackLabelWidth get() = 52f * density
+    private val trackLabelWidth get() = 40f * density
     private val labelZone get() = trackLabelWidth + 8f * density
     private val trackRightMargin get() = 4f * density
-    private val iconSize get() = 18f * density
+    private val iconSize get() = 14f * density
 
     private fun trackH(): Float = (height - trackAreaTop - trackRightMargin) / tracks.size
     private fun trackTop(i: Int): Float = trackAreaTop + i * trackH()
@@ -108,7 +109,7 @@ class TimelineView @JvmOverloads constructor(
     private val dropPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val playPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val rulerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 1.5f }
-    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 18f * density; isFakeBoldText = true }
+    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 12f * density; isFakeBoldText = true }
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val clipBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f * density }
@@ -138,7 +139,7 @@ class TimelineView @JvmOverloads constructor(
     // Density-aware touch slop (Android's real guidance) instead of raw pixels.
     private val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val trimSlopPx get() = 10f * density
-    private val playSlopPx get() = 18f * density
+    private val playSlopPx get() = 12f * density
 
     private enum class Gesture { NONE, CLIP_TRIM_START, CLIP_TRIM_END, OVERLAY_TRIM_START, OVERLAY_TRIM_END, OVERLAY_MOVE, PLAYHEAD, SEEK, SCROLL }
 
@@ -638,7 +639,9 @@ class TimelineView @JvmOverloads constructor(
     }
 
     /** Titles for overlay/text bars, drawn after the playhead so the needle
-     * never covers them. Mirrors the geometry used by [drawOverlayBars]. */
+     *  never covers them. Mirrors the geometry used by [drawOverlayBars].
+     *  Text is compact (13dp) with a real average-char-width estimate so the
+     *  label never overflows its bar or collides with the next one. */
     private fun drawOverlayLabels(canvas: Canvas, left: Float, top: Float, trackH: Float, items: List<OverlayItem>) {
         val w = width.toFloat() - trackRightMargin
         for (item in items) {
@@ -648,12 +651,12 @@ class TimelineView @JvmOverloads constructor(
             val x0 = tlX(startMs)
             val x1 = tlX(endMs)
             if (x1 < left || x0 > w) continue
-            if (x1 - x0 <= 42f * density) continue
+            if (x1 - x0 <= 36f * density) continue
             textPaint.color = context.getColor(R.color.overlay_handle)
-            textPaint.textSize = 18f * density
-            val maxChars = ((x1 - x0) / (22f * density)).toInt().coerceIn(1, 10)
+            textPaint.textSize = 13f * density
+            val maxChars = ((x1 - x0) / (8f * density)).toInt().coerceIn(1, 12)
             val label = item.label.ifBlank { item.type }
-            canvas.drawText(label.take(maxChars), x0 + 6f * density, top + trackH / 2f + 6f * density, textPaint)
+            canvas.drawText(label.take(maxChars), x0 + 6f * density, top + trackH / 2f + 5f * density, textPaint)
         }
     }
 
@@ -771,20 +774,30 @@ class TimelineView @JvmOverloads constructor(
         invalidate()
     }
 
+    /** Compact ruler ticks + time labels. Labels are skipped when a tick is
+     *  too close to the previous label so they can never overlap at any zoom
+     *  level, while the minor ticks still show the exact grid. */
     private fun drawTimeRuler(canvas: Canvas, left: Float, right: Float, y: Float, textY: Float, color: Int) {
         val step = pickRulerStep(controller.viewportMs)
         val start = (controller.visibleRange().first / step) * step
         var t = start
         rulerPaint.strokeWidth = 1.5f * density
         rulerPaint.color = withAlpha(color, 160)
-        labelPaint.textSize = 16f * density
+        labelPaint.textSize = 12f * density
+        // Sub-second ticks show tenths, so their labels are wider.
+        val subSecond = step < 1000L
+        val minLabelGap = (if (subSecond) 46f else 30f) * density
+        var lastLabelX = -Float.MAX_VALUE
         while (t <= controller.visibleRange().last) {
             val x = tlX(t)
             if (x in left..right) {
                 canvas.drawLine(x, y, x, y + 10f * density, rulerPaint)
-                val label = formatTimeTick(t)
-                labelPaint.color = withAlpha(color, 200)
-                canvas.drawText(label, x + 2f * density, textY, labelPaint)
+                if (x - lastLabelX >= minLabelGap) {
+                    val label = formatTimeTick(t, subSecond)
+                    labelPaint.color = withAlpha(color, 200)
+                    canvas.drawText(label, x + 2f * density, textY, labelPaint)
+                    lastLabelX = x
+                }
             }
             t += step
         }
@@ -805,11 +818,13 @@ class TimelineView @JvmOverloads constructor(
         }
     }
 
-    private fun formatTimeTick(ms: Long): String {
+    private fun formatTimeTick(ms: Long, subSecond: Boolean = false): String {
         val totalSec = ms / 1000
         val min = totalSec / 60
         val sec = totalSec % 60
-        return if (min > 0) "%d:%02d".format(min, sec) else "0:%02d".format(sec)
+        val base = if (min > 0) "%d:%02d".format(min, sec) else "0:%02d".format(sec)
+        if (!subSecond) return base
+        return "$base.${(ms % 1000) / 100}"
     }
 
     private fun pickRulerStep(viewportMs: Long): Long = when {

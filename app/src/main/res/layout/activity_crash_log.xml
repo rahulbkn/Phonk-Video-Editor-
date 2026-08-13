@@ -327,16 +327,5 @@
             android:background="@drawable/bg_button_secondary"
             android:textColor="@color/text_primary"
             android:text="@string/crash_history" />
-
-        <Button
-            android:id="@+id/btn_crash_test"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="@dimen/crash_button_height"
-            android:layout_margin="@dimen/crash_button_margin"
-            android:background="@drawable/bg_button_secondary"
-            android:textColor="@color/text_primary"
-            android:visibility="gone"
-            android:text="@string/crash_test_button" />
     </LinearLayout>
 </LinearLayout>

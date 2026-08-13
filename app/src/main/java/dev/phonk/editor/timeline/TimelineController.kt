@@ -78,14 +78,23 @@ class TimelineController(
     fun visibleRange(): LongRange =
         viewportStartMs..(viewportStartMs + viewportMs).coerceAtMost(totalMs)
 
-    /** Zooms in/out around the visible window's centre. [factor] > 1 zooms in. */
+    /**
+     * Zooms in/out around the playhead so the needle never leaves the
+     * viewport while using the toolbar buttons. [factor] > 1 zooms in.
+     * When the playhead is scrolled out of view, pivots on the nearest
+     * visible edge instead so the zoom is still stable.
+     */
     fun zoomBy(factor: Float) {
-        zoom(factor, viewportWidthPx / 2f, viewportWidthPx)
+        val pivotX = timeToX(currentMs).coerceIn(0f, viewportWidthPx)
+        zoom(factor, pivotX, viewportWidthPx)
     }
 
-    /** Zoom readout relative to the 30s base window (50%..200% range when sane). */
+    /** Zoom readout relative to the 30s base window, mirroring the actual
+     *  viewport clamp in [zoom] (0.5s..max(600s, totalMs)) instead of a
+     *  hard-coded range that could disagree with the real zoom level. */
     val zoomPercent: Int
-        get() = if (viewportMs <= 0L) 100 else (baseViewportMs.toDouble() / viewportMs * 100.0).toInt().coerceIn(25, 400)
+        get() = if (viewportMs <= 0L) 100
+            else (baseViewportMs.toDouble() / viewportMs * 100.0).toInt().coerceAtLeast(1)
 
     /** Total playback duration in ms across the whole project. */
     fun projectDurationMs(): Long = totalMs.coerceAtLeast(project().clips

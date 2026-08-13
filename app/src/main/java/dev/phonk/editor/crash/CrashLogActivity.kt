@@ -7,12 +7,10 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
-import dev.phonk.editor.BuildConfig
 import dev.phonk.editor.R
 import dev.phonk.editor.ui.MainActivity
 import java.io.File
@@ -120,15 +118,6 @@ class CrashLogActivity : Activity() {
         button(R.id.btn_crash_clear).setOnClickListener { confirmClearCrashLog() }
         button(R.id.btn_crash_history).setOnClickListener {
             startActivity(Intent(this, CrashHistoryActivity::class.java))
-        }
-
-        val testButton = button(R.id.btn_crash_test)
-        if (BuildConfig.DEBUG) {
-            testButton.visibility = View.VISIBLE
-            testButton.setOnClickListener {
-                // Deliberate crash used only to verify the reporting pipeline.
-                throw RuntimeException(getString(R.string.test_crash_message))
-            }
         }
     }
 

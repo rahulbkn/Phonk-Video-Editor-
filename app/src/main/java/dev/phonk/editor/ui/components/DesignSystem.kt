@@ -75,7 +75,6 @@ object EditorTokens {
 
     // Bar heights (editor chrome)
     val TopBarHeight = 52.dp        // editor top bar
-    val AspectBarHeight = 40.dp     // aspect / canvas bar
     val PlayerBarHeight = 48.dp     // playback controls bar
     val TimelineBarHeight = 44.dp   // timeline tool bar
     val MainToolbarHeight = 56.dp   // bottom main tool bar

@@ -46,6 +46,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import dev.phonk.editor.model.AudioItem
+import dev.phonk.editor.model.ClipEffect
 
 /**
  * Editor-scoped ViewModel. Owns the mutable project, analysis state machine,
@@ -877,7 +879,8 @@ class EditorViewModel(
             )
         } else {
             _project.value = p.copy(
-                effects = p.effects + dev.phonk.editor.model.ClipEffect(
+                effects = p.effects + ClipEffect(
+                    id = java.util.UUID.randomUUID().toString().take(8),
                     clipId = "fx_${System.currentTimeMillis()}",
                     kind = kind,
                     t0Ms = pos,
@@ -888,6 +891,58 @@ class EditorViewModel(
             )
         }
         persist()
+    }
+
+    // ==================== Independent timeline items (multi-item support) ====================
+
+    /** Adds another independent audio clip to its own timeline row. */
+    fun addAudioItem(uri: String, label: String, startMs: Long, endMs: Long) {
+        val p = _project.value ?: return
+        val start = startMs.coerceAtLeast(0L)
+        val end = endMs.coerceIn(start + MIN_OVERLAY_DURATION, p.timelineDurationMs().takeIf { it > start } ?: start + MIN_OVERLAY_DURATION)
+        val next = (p.audioItems.maxOfOrNull { it.rowOrder } ?: -1) + 1
+        commit { proj ->
+            proj.copy(
+                audioItems = proj.audioItems + AudioItem(
+                    uri = uri, label = label.ifBlank { "Audio" }, startMs = start, endMs = end, rowOrder = next,
+                ),
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+    }
+
+    fun removeAudioItem(id: String) {
+        commit { p -> p.copy(audioItems = p.audioItems.filterNot { it.id == id }, updatedAt = System.currentTimeMillis()) }
+    }
+
+    /** Moves/resizes an independent audio item on its timeline row. */
+    fun setAudioItemTiming(id: String, startMs: Long, endMs: Long) {
+        val p = _project.value ?: return
+        val total = p.timelineDurationMs().takeIf { it > 0 } ?: p.videoDurationMs
+        val minDur = MIN_OVERLAY_DURATION
+        val s = startMs.coerceIn(0L, (endMs - minDur).coerceAtLeast(0L))
+        val e = endMs.coerceIn(s + minDur, total.takeIf { it > 0 } ?: s + minDur)
+        commit { proj -> proj.copy(audioItems = proj.audioItems.map { if (it.id == id) it.copy(startMs = s, endMs = e) else it }, updatedAt = System.currentTimeMillis()) }
+    }
+
+    /** Moves/resizes an independent effect item on its timeline row. */
+    fun setEffectTiming(id: String, startMs: Long, endMs: Long) {
+        val p = _project.value ?: return
+        val total = p.timelineDurationMs().takeIf { it > 0 } ?: p.videoDurationMs
+        val minDur = MIN_OVERLAY_DURATION
+        val s = startMs.coerceIn(0L, (endMs - minDur).coerceAtLeast(0L))
+        val e = endMs.coerceIn(s + minDur, total.takeIf { it > 0 } ?: s + minDur)
+        commit { proj ->
+            proj.copy(
+                effects = proj.effects.map { if (it.id == id) it.copy(t0Ms = s, t1Ms = e) else it },
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+    }
+
+    /** Removes an independent effect item (not clip-attached effects). */
+    fun removeEffect(id: String) {
+        commit { p -> p.copy(effects = p.effects.filterNot { it.id == id }, updatedAt = System.currentTimeMillis()) }
     }
 
     fun clearClipEffect() {

@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Redo
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.SkipNext
@@ -439,12 +440,6 @@ fun EditorScreen(projectId: String, onBack: () -> Unit) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).background(colorResource(R.color.toolbar_bg))) {
                 // ─── Top Bar ─────────────────────────────────────────────────
                 TopBar(onBack = onBack, p = p, totalDur = totalDur, canUndo = canUndo, canRedo = canRedo, onUndo = { vm.undo() }, onRedo = { vm.redo() }, onExport = { vm.resetExport(); showExport = true })
-
-                // ─── Aspect / Canvas Toolbar ─────────────────────────────────
-                AspectToolbar(selectedAspect = selectedAspect, onAspectSelected = {
-                    selectedAspect = it
-                    vm.setAspectRatio(it)
-                })
 
                 // ─── Preview ─────────────────────────────────────────────────
                 PreviewSection(vm, p, isPlaying, playhead, selectedOverlayId, selectedAspect, fullscreen, onToggleFullscreen = { fullscreen = !fullscreen }, onEditText = { editOverlayId = it })
@@ -913,33 +908,6 @@ private fun PlayerControls(playhead: Long, totalDur: Long, isPlaying: Boolean, o
 }
 
 @Composable
-private fun AspectToolbar(selectedAspect: String, onAspectSelected: (String) -> Unit) {
-    val aspects = listOf("1:1", "4:5", "9:16", "16:9", "2.35:1")
-    Row(
-        Modifier.fillMaxWidth().height(EditorTokens.AspectBarHeight).background(colorResource(R.color.toolbar_bg))
-            .border(0.5.dp, colorResource(R.color.border_default)).padding(horizontal = EditorTokens.Space8),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space6),
-    ) {
-        Text("Aspect", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-        aspects.forEach { label ->
-            val sel = selectedAspect == label
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(EditorTokens.CornerControl))
-                    .background(if (sel) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else colorResource(R.color.surface_control))
-                    .clickable { onAspectSelected(label) }
-                    .padding(horizontal = EditorTokens.Space12, vertical = EditorTokens.Space6),
-            ) {
-                Text(label, fontSize = 10.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
-                    color = if (sel) MaterialTheme.colorScheme.primary else colorResource(R.color.text_ruler))
-            }
-        }
-    }
-}
-
-@Composable
 private fun TimelineToolbar(
     vm: EditorViewModel,
     playhead: Long,
@@ -960,9 +928,23 @@ private fun TimelineToolbar(
         TimelineToolButton(Icons.Filled.Tune, "Keyframe", onKeyframe)
         TimelineToolButton(Icons.Filled.MusicNote, "Marker", onMarker)
         Spacer(Modifier.weight(1f))
-        ZoomIconButton("−", "Zoom out", onZoomOut)
+        EditorIconButton(
+            icon = Icons.Filled.Remove,
+            contentDescription = "Zoom out",
+            onClick = onZoomOut,
+            target = EditorTokens.CompactTarget,
+            background = colorResource(R.color.surface_control),
+            tint = colorResource(R.color.text_ruler),
+        )
         Text("$zoomPercent%", fontSize = EditorTokens.FontLabel, color = colorResource(R.color.text_ruler), modifier = Modifier.padding(horizontal = 4.dp))
-        TimelineToolButton(Icons.Filled.Add, "Zoom in", onZoomIn)
+        EditorIconButton(
+            icon = Icons.Filled.Add,
+            contentDescription = "Zoom in",
+            onClick = onZoomIn,
+            target = EditorTokens.CompactTarget,
+            background = colorResource(R.color.surface_control),
+            tint = colorResource(R.color.text_ruler),
+        )
     }
 }
 
@@ -977,24 +959,12 @@ private fun TimelineToolButton(icon: ImageVector, label: String, onClick: () -> 
 }
 
 @Composable
-private fun ZoomIconButton(glyph: String, label: String, onClick: () -> Unit) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .size(EditorTokens.CompactTarget)
-            .clip(RoundedCornerShape(EditorTokens.CornerButton))
-            .background(colorResource(R.color.surface_control))
-            .clickable { onClick() },
-    ) {
-        Text(glyph, fontSize = EditorTokens.FontTool, color = colorResource(R.color.text_ruler))
-    }
-}
-
-@Composable
 private fun TimelineSection(vm: EditorViewModel, controller: TimelineController, p: PhonkProject?, playhead: Long, selectedOverlayId: String?, zoomTick: Int, modifier: Modifier = Modifier) {
+    val tvRef = remember { ViewRef<TimelineView>() }
     AndroidView(
         factory = { ctx ->
             TimelineView(ctx).also { tv ->
+                tvRef.value = tv
                 tv.controller = controller; tv.project = vm.project.value ?: PhonkProject()
                 tv.onSeekTo = { ms -> vm.setCurrentPosition(ms) }; tv.onClipSplit = { ms -> vm.splitAt(ms) }
                 tv.onSelectClip = { id -> vm.selectClip(id) }; tv.onTrimStart = { ns -> vm.trimClip(ns, vm.selectedClip()?.destEndMs ?: ns) }
@@ -1002,16 +972,26 @@ private fun TimelineSection(vm: EditorViewModel, controller: TimelineController,
                 tv.onSelectOverlay = { id -> vm.selectOverlay(id) }; tv.onSetOverlayTiming = { id, s, e -> vm.setOverlayTiming(id, s, e) }
             }
         },
-        update = { tv ->
-            val pr = vm.project.value ?: PhonkProject()
-            tv.project = pr; tv.selectedOverlayId = selectedOverlayId
-            tv.controller.totalMs = pr.timelineDurationMs().takeIf { it > 0 } ?: pr.videoDurationMs
-            tv.controller.currentMs = playhead.coerceIn(0L, tv.controller.totalMs)
-            tv.refresh()
-            if (zoomTick > 0) tv.refresh()
-        },
+        update = { tv -> syncTimelineView(tv, vm, controller, playhead, selectedOverlayId, zoomTick) },
         modifier = modifier.fillMaxWidth().heightIn(min = 100.dp),
     )
+    LaunchedEffect(p) {
+        val tv = tvRef.value ?: return@LaunchedEffect
+        syncTimelineView(tv, vm, controller, playhead, selectedOverlayId, zoomTick)
+    }
+}
+
+private class ViewRef<T> {
+    var value: T? = null
+}
+
+private fun syncTimelineView(tv: TimelineView, vm: EditorViewModel, controller: TimelineController, playhead: Long, selectedOverlayId: String?, zoomTick: Int) {
+    val pr = vm.project.value ?: PhonkProject()
+    tv.project = pr; tv.selectedOverlayId = selectedOverlayId
+    tv.controller.totalMs = pr.timelineDurationMs().takeIf { it > 0 } ?: pr.videoDurationMs
+    tv.controller.currentMs = playhead.coerceIn(0L, tv.controller.totalMs)
+    tv.refresh()
+    if (zoomTick > 0) tv.refresh()
 }
 
 @Composable

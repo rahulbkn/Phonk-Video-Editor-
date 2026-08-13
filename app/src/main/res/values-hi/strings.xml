@@ -89,7 +89,6 @@
     <string name="crash_continue">ऐप में जारी रखें</string>
     <string name="crash_history">इतिहास</string>
     <string name="crash_back">वापस</string>
-    <string name="crash_test_button">टेस्ट क्रैश</string>
 
     <string name="crash_log_copied">क्रैश लॉग कॉपी किया गया</string>
     <string name="crash_log_deleted">क्रैश लॉग हटा दिया गया</string>
@@ -107,8 +106,6 @@
 
     <string name="crash_clipboard_label">क्रैश लॉग</string>
     <string name="crash_share_chooser">क्रैश रिपोर्ट साझा करें</string>
-
-    <string name="test_crash_message">क्रैश रिपोर्टिंग प्रणाली से टेस्ट क्रैश</string>
 
     <string name="crash_icon_content_description">ऐप क्रैश हो गया</string>
     <string name="crash_stack_content_description">पूरा क्रैश स्टैक ट्रेस; पूरी रिपोर्ट कॉपी करने के लिए देर तक दबाएं</string>
