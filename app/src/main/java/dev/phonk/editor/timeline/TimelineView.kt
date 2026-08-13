@@ -171,6 +171,11 @@ class TimelineView @JvmOverloads constructor(
     private var clipTrimId: String? = null
     private var clipTrimLiveStart = 0L
     private var clipTrimLiveEnd = 0L
+    /** Valid destination window for the clip being trimmed (see [TimelineTrim]),
+     *  so a handle clamps instead of snapping back when the model would reject
+     *  the requested window. */
+    private var clipTrimMinStart = 0L
+    private var clipTrimMaxEnd = 0L
 
     init {
         isFocusable = true
@@ -453,17 +458,8 @@ class TimelineView @JvmOverloads constructor(
         }
     }
 
-    private fun sourceToDest(srcMs: Long): Long {
-        val clips = project.clips
-        if (clips.isEmpty()) return srcMs.coerceIn(0L, controller.totalMs)
-        val clip = clips.firstOrNull { srcMs in it.sourceStartMs until it.sourceEndMs }
-            ?: clips.lastOrNull { srcMs >= it.sourceStartMs } ?: return srcMs
-        val srcDur = (clip.sourceEndMs - clip.sourceStartMs).coerceAtLeast(1L)
-        val destDur = (clip.destEndMs - clip.destStartMs).coerceAtLeast(0L)
-        val ratio = destDur.toDouble() / srcDur
-        return (clip.destStartMs + ((srcMs - clip.sourceStartMs) * ratio).toLong())
-            .coerceIn(clip.destStartMs, clip.destEndMs)
-    }
+    private fun sourceToDest(srcMs: Long): Long =
+        TimelineTime.sourceToDest(project.clips, srcMs, project.videoDurationMs, controller.totalMs)
 
     private fun drawClips(
         canvas: Canvas,
@@ -837,9 +833,12 @@ class TimelineView @JvmOverloads constructor(
                 when (gesture) {
                     Gesture.CLIP_TRIM_START, Gesture.CLIP_TRIM_END -> {
                         val clip = selectedClip() ?: return true
+                        val bounds = TimelineTrim.bounds(clip, project, controller.totalMs)
                         clipTrimId = clip.id
                         clipTrimLiveStart = clip.destStartMs
                         clipTrimLiveEnd = clip.destEndMs
+                        clipTrimMinStart = bounds.minDestStart
+                        clipTrimMaxEnd = bounds.maxDestEnd
                     }
                     Gesture.PLAYHEAD, Gesture.SEEK -> seekFromX(event.x)
                     Gesture.OVERLAY_TRIM_START, Gesture.OVERLAY_TRIM_END, Gesture.OVERLAY_MOVE ->
@@ -860,12 +859,12 @@ class TimelineView @JvmOverloads constructor(
                     }
                     Gesture.CLIP_TRIM_START -> {
                         val t = tlMs(event.x)
-                        clipTrimLiveStart = t.coerceIn(0L, clipTrimLiveEnd - MIN_DURATION)
+                        clipTrimLiveStart = t.coerceIn(clipTrimMinStart, clipTrimLiveEnd - MIN_DURATION)
                         seekToClipEdge(clipTrimLiveStart)
                     }
                     Gesture.CLIP_TRIM_END -> {
                         val t = tlMs(event.x)
-                        clipTrimLiveEnd = t.coerceIn(clipTrimLiveStart + MIN_DURATION, controller.totalMs)
+                        clipTrimLiveEnd = t.coerceIn(clipTrimLiveStart + MIN_DURATION, clipTrimMaxEnd)
                         seekToClipEdge(clipTrimLiveEnd)
                     }
                     Gesture.OVERLAY_TRIM_START, Gesture.OVERLAY_TRIM_END, Gesture.OVERLAY_MOVE ->
@@ -902,6 +901,8 @@ class TimelineView @JvmOverloads constructor(
         gesture = Gesture.NONE
         overlayDrag = null
         clipTrimId = null
+        clipTrimMinStart = 0L
+        clipTrimMaxEnd = 0L
     }
 
     private fun handleTap(x: Float, y: Float) {

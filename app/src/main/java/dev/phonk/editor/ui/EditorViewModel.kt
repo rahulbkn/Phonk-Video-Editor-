@@ -37,6 +37,8 @@ import dev.phonk.editor.model.withTiming
 import dev.phonk.editor.model.withTransform
 import dev.phonk.editor.preview.PlayerController
 import dev.phonk.editor.project.ProjectStore
+import dev.phonk.editor.timeline.TimelineTime
+import dev.phonk.editor.timeline.TimelineTrim
 import dev.phonk.editor.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -280,20 +282,19 @@ class EditorViewModel(
     fun trimClip(destStartMs: Long, destEndMs: Long) {
         val p = _project.value ?: return
         val clip = selectedClip() ?: return
-        if (destEndMs <= destStartMs || destStartMs < clip.destStartMs || destEndMs > clip.destEndMs) return
-        val srcDur = (clip.sourceEndMs - clip.sourceStartMs).coerceAtLeast(0L)
-        val destDur = (clip.destEndMs - clip.destStartMs).coerceAtLeast(1L)
-        val newDestDur = destEndMs - destStartMs
-        val ratio = newDestDur.toDouble() / destDur
-        val newSrcDur = (srcDur * ratio).toLong().coerceAtLeast(1L)
-        val offsetRatio = (destStartMs - clip.destStartMs).toDouble() / destDur
-        val newSrcStart = clip.sourceStartMs + (srcDur * offsetRatio).toLong()
+        if (destEndMs <= destStartMs) return
+        // Clamp into the valid window (previous clip end / next clip start /
+        // source media bounds) instead of rejecting the gesture, so a handle
+        // drag can never snap back after the model refuses the request.
+        val bounds = TimelineTrim.bounds(clip, p)
+        val (start, end) = TimelineTrim.clamp(destStartMs, destEndMs, bounds)
+        val (newSrcStart, newSrcEnd) = TimelineTrim.toSource(clip, start, end, p.videoDurationMs)
         commit { proj ->
             val trimmed = clip.copy(
                 sourceStartMs = newSrcStart,
-                sourceEndMs = newSrcStart + newSrcDur,
-                destStartMs = destStartMs,
-                destEndMs = destEndMs,
+                sourceEndMs = newSrcEnd,
+                destStartMs = start,
+                destEndMs = end,
             )
             proj.copy(clips = proj.clips.map { if (it.id == clip.id) trimmed else it }, updatedAt = System.currentTimeMillis())
         }
@@ -927,27 +928,13 @@ class EditorViewModel(
     /** Maps a destination (timeline) timestamp to the source media timestamp. */
     fun destToSource(destMs: Long): Long {
         val p = _project.value ?: return destMs
-        if (p.clips.isEmpty()) return destMs
-        val clip = p.clips.firstOrNull { destMs in it.destStartMs until it.destEndMs }
-            ?: if (destMs >= p.timelineDurationMs()) p.clips.last() else return destMs.coerceIn(0L, p.videoDurationMs)
-        val destDur = (clip.destEndMs - clip.destStartMs).coerceAtLeast(1L)
-        val srcDur = (clip.sourceEndMs - clip.sourceStartMs).coerceAtLeast(0L)
-        val ratio = srcDur.toDouble() / destDur
-        return (clip.sourceStartMs + ((destMs - clip.destStartMs) * ratio).toLong())
-            .coerceIn(clip.sourceStartMs, clip.sourceEndMs)
+        return TimelineTime.destToSource(p.clips, destMs, p.videoDurationMs, p.timelineDurationMs())
     }
 
     /** Maps a source (media) timestamp to the destination timeline timestamp. */
     fun sourceToDest(srcMs: Long): Long {
         val p = _project.value ?: return srcMs
-        if (p.clips.isEmpty()) return srcMs
-        val clip = p.clips.firstOrNull { srcMs in it.sourceStartMs until it.sourceEndMs }
-            ?: p.clips.lastOrNull() ?: return srcMs.coerceIn(0L, p.timelineDurationMs())
-        val srcDur = (clip.sourceEndMs - clip.sourceStartMs).coerceAtLeast(1L)
-        val destDur = (clip.destEndMs - clip.destStartMs).coerceAtLeast(0L)
-        val ratio = destDur.toDouble() / srcDur
-        return (clip.destStartMs + ((srcMs - clip.sourceStartMs) * ratio).toLong())
-            .coerceIn(clip.destStartMs, clip.destEndMs)
+        return TimelineTime.sourceToDest(p.clips, srcMs, p.videoDurationMs, p.timelineDurationMs())
     }
 
     fun playPause() {
