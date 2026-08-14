@@ -35,6 +35,7 @@ import dev.phonk.editor.model.SubtitleTrack
 import dev.phonk.editor.model.TextLayer
 import dev.phonk.editor.model.withTiming
 import dev.phonk.editor.model.withTransform
+import dev.phonk.editor.preview.EmbeddedAudioRouter
 import dev.phonk.editor.preview.PlayerController
 import dev.phonk.editor.project.ProjectStore
 import dev.phonk.editor.timeline.TimelineTime
@@ -48,6 +49,8 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import dev.phonk.editor.model.AudioItem
 import dev.phonk.editor.model.ClipEffect
+import dev.phonk.editor.model.ImageItem
+import dev.phonk.editor.timeline.TimelineOps
 
 /**
  * Editor-scoped ViewModel. Owns the mutable project, analysis state machine,
@@ -80,6 +83,16 @@ class EditorViewModel(
 
     private val _selectedOverlayId = MutableStateFlow<String?>(null)
     val selectedOverlayId: StateFlow<String?> = _selectedOverlayId.asStateFlow()
+
+    private val _selectedImageId = MutableStateFlow<String?>(null)
+    val selectedImageId: StateFlow<String?> = _selectedImageId.asStateFlow()
+
+    private val _selectedAudioItemId = MutableStateFlow<String?>(null)
+    val selectedAudioItemId: StateFlow<String?> = _selectedAudioItemId.asStateFlow()
+
+    /** Media uri currently loaded in the preview player. Drives switching
+     *  between the main video and appended video clips when the playhead moves. */
+    private var currentMediaUri: String? = null
 
     /** Tracks the pre-gesture snapshot + liveness for the current overlay drag. */
     private val overlayGesture = OverlayGestureTracker()
@@ -178,6 +191,8 @@ class EditorViewModel(
             overlayGesture.reset()
             _analysis.value = null
             _selectedOverlayId.value = null
+            _selectedImageId.value = null
+            _selectedAudioItemId.value = null
             analysisManager.cancel()
             analysisProjectId = null
         }
@@ -198,6 +213,7 @@ class EditorViewModel(
         }
         val mediaUri = p.videoUri ?: p.audioUri
         if (mediaUri != null) player.setVideo(Uri.parse(mediaUri)) else player.setVideo(null)
+        currentMediaUri = mediaUri
         player.pause()
         durationSynced = false
         _isPlaying.value = false
@@ -241,6 +257,7 @@ class EditorViewModel(
         refreshUndoState()
         persist()
         player.setVideo(uri)
+        currentMediaUri = uri.toString()
         player.pause()
         durationSynced = false
         _playheadMs.value = 0L
@@ -895,11 +912,12 @@ class EditorViewModel(
 
     // ==================== Independent timeline items (multi-item support) ====================
 
-    /** Adds another independent audio clip to its own timeline row. */
+    /** Adds another independent audio clip to its own timeline row. The global
+     *  timeline auto-extends so audio can outlive the video clips. */
     fun addAudioItem(uri: String, label: String, startMs: Long, endMs: Long) {
         val p = _project.value ?: return
         val start = startMs.coerceAtLeast(0L)
-        val end = endMs.coerceIn(start + MIN_OVERLAY_DURATION, p.timelineDurationMs().takeIf { it > start } ?: start + MIN_OVERLAY_DURATION)
+        val end = endMs.coerceAtLeast(start + MIN_OVERLAY_DURATION)
         val next = (p.audioItems.maxOfOrNull { it.rowOrder } ?: -1) + 1
         commit { proj ->
             proj.copy(
@@ -915,13 +933,111 @@ class EditorViewModel(
         commit { p -> p.copy(audioItems = p.audioItems.filterNot { it.id == id }, updatedAt = System.currentTimeMillis()) }
     }
 
-    /** Moves/resizes an independent audio item on its timeline row. */
-    fun setAudioItemTiming(id: String, startMs: Long, endMs: Long) {
+    fun selectImage(id: String?) {
+        _selectedImageId.value = id
+    }
+
+    fun selectAudioItem(id: String?) {
+        _selectedAudioItemId.value = id
+    }
+
+    /** Appends a NEW video file as a full-length clip at the end of the
+     *  timeline. The global timeline extends automatically because duration is
+     *  derived from the maximum item end. */
+    fun addVideoClip(uri: Uri, name: String, durationMs: Long) {
         val p = _project.value ?: return
-        val total = p.timelineDurationMs().takeIf { it > 0 } ?: p.videoDurationMs
+        val dur = if (durationMs > 0) durationMs else p.videoDurationMs.coerceAtLeast(1L)
+        val start = p.timelineDurationMs()
+        commit { proj ->
+            proj.copy(
+                clips = TimelineOps.appendVideoClip(proj.clips, uri.toString(), dur, start),
+                selectedClipId = proj.clips.lastOrNull()?.id,
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+    }
+
+    /** Appends a still image at the end of the timeline (default duration). */
+    fun addImageItem(uri: Uri, label: String) {
+        val p = _project.value ?: return
+        val start = p.timelineDurationMs()
+        val end = start + DEFAULT_OVERLAY_DURATION
+        commit { proj ->
+            proj.copy(
+                imageItems = TimelineOps.appendImage(proj.imageItems, uri.toString(), label, start, end - start),
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+        _selectedImageId.value = _project.value?.imageItems?.lastOrNull()?.id
+    }
+
+    /** Inserts a NEW video file as a full-length clip at exact timeline
+     *  position [insertAtMs] (the "+" between clips). Later video-track items
+     *  shift to make room; the global timeline extends automatically. The
+     *  playhead (global time) is never touched by the insertion itself. */
+    fun insertVideoAt(uri: Uri, name: String, durationMs: Long, insertAtMs: Long) {
+        val p = _project.value ?: return
+        val dur = if (durationMs > 0) durationMs else p.videoDurationMs.coerceAtLeast(1L)
+        val (clips, images) = TimelineOps.insertVideoClip(p.clips, p.imageItems, uri.toString(), dur, insertAtMs)
+        commit { proj ->
+            proj.copy(
+                clips = clips,
+                imageItems = images,
+                selectedClipId = clips.lastOrNull()?.id,
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+    }
+
+    /** Inserts a still image at exact timeline position [insertAtMs] (default
+     *  duration). Later video-track items shift; the timeline auto-extends. */
+    fun insertImageAt(uri: Uri, label: String, insertAtMs: Long) {
+        val p = _project.value ?: return
+        val (clips, images) = TimelineOps.insertImage(
+            p.clips, p.imageItems, uri.toString(), label, DEFAULT_OVERLAY_DURATION, insertAtMs,
+        )
+        commit { proj ->
+            proj.copy(clips = clips, imageItems = images, updatedAt = System.currentTimeMillis())
+        }
+        _selectedImageId.value = _project.value?.imageItems?.lastOrNull()?.id
+    }
+
+    /** Drags a video clip so its destination window starts at [newStartMs]
+     *  (duration preserved). The timeline auto-extends when it crosses the end. */
+    fun moveClip(id: String, newStartMs: Long) {
+        val p = _project.value ?: return
+        val moved = TimelineOps.moveClip(p.clips, id, newStartMs)
+        if (moved == p.clips) return
+        commit { proj -> proj.copy(clips = moved, selectedClipId = id, updatedAt = System.currentTimeMillis()) }
+    }
+
+    /** Moves/resizes an image item's window on the video track. Trimming past
+     *  the current end auto-extends the global timeline (derived from the max
+     *  item end), so images behave exactly like video clips. */
+    fun setImageItemTiming(id: String, startMs: Long, endMs: Long) {
+        val s = startMs.coerceAtLeast(0L)
+        val e = endMs.coerceAtLeast(s + MIN_OVERLAY_DURATION)
+        commit { proj ->
+            proj.copy(
+                imageItems = proj.imageItems.map { if (it.id == id) it.copy(startMs = s, endMs = e) else it },
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+        _selectedImageId.value = id
+    }
+
+    /** The image item whose window contains [destMs] (for preview rendering). */
+    fun activeImageAt(destMs: Long): ImageItem? =
+        _project.value?.imageItems?.firstOrNull { destMs in it.startMs until it.endMs }
+
+
+    /** Moves/resizes an independent audio item on its timeline row. Trimming
+     *  past the current end auto-extends the global timeline (duration is the
+     *  max item end), so audio rows extend the canvas like any other item. */
+    fun setAudioItemTiming(id: String, startMs: Long, endMs: Long) {
         val minDur = MIN_OVERLAY_DURATION
         val s = startMs.coerceIn(0L, (endMs - minDur).coerceAtLeast(0L))
-        val e = endMs.coerceIn(s + minDur, total.takeIf { it > 0 } ?: s + minDur)
+        val e = endMs.coerceAtLeast(s + minDur)
         commit { proj -> proj.copy(audioItems = proj.audioItems.map { if (it.id == id) it.copy(startMs = s, endMs = e) else it }, updatedAt = System.currentTimeMillis()) }
     }
 
@@ -977,7 +1093,92 @@ class EditorViewModel(
     fun setCurrentPosition(ms: Long) {
         _playheadMs.value = ms
         pendingSeekDestMs = ms
-        player.scrubTo(destToSource(ms), 0L, _project.value?.videoDurationMs ?: 0L)
+        val p = _project.value
+        val clip = p?.activeVideoClipAt(ms)
+        switchToMedia(clip?.sourceUri ?: p?.videoUri)
+        val ws = clip?.sourceStartMs ?: 0L
+        val we = clip?.sourceEndMs ?: (p?.videoDurationMs ?: 0L)
+        player.scrubTo(destToSource(ms), ws, we)
+    }
+
+    /** Switches the preview player to [uri] without changing the play state.
+     *  A media switch replaces the loaded item, so the previous clip's audio is
+     *  never leaked. No-op when the media is already loaded. */
+    private fun switchToMedia(uri: String?) {
+        if (uri == null || uri == currentMediaUri) return
+        currentMediaUri = uri
+        val wasPlaying = player.player.playWhenReady
+        player.setVideo(Uri.parse(uri))
+        if (wasPlaying) player.play()
+    }
+
+    /** Keeps the single preview player aligned to the ACTIVE video clip at
+     *  [destMs] so only its embedded audio is heard (mirrors the export's
+     *  per-clip atrim+concat). Switches media at cross-file boundaries, seeks
+     *  over removed source content, and stops at the end of the timeline. */
+    private fun applyPlayerAlignment(destMs: Long) {
+        val p = _project.value ?: return
+        val a = EmbeddedAudioRouter.align(
+            clips = p.clips,
+            videoUri = p.videoUri,
+            destMs = destMs,
+            playerPosMs = player.pollPosition(),
+            currentMediaUri = currentMediaUri,
+            timelineDurationMs = p.timelineDurationMs(),
+        )
+        if (a.stop) {
+            player.pause()
+            _isPlaying.value = false
+            return
+        }
+        val mediaUri = a.switchMediaUri
+        if (mediaUri != null && mediaUri != currentMediaUri) {
+            currentMediaUri = mediaUri
+            val wasPlaying = player.player.playWhenReady
+            player.setVideo(Uri.parse(mediaUri))
+            if (wasPlaying) player.play()
+        }
+        val seekMs = a.seekToSourceMs
+        if (seekMs != null) {
+            val active = p.activeVideoClipAt(destMs)
+            val ws = active?.sourceStartMs ?: 0L
+            val we = active?.sourceEndMs ?: p.videoDurationMs
+            player.scrubTo(seekMs, ws, we)
+        }
+    }
+
+    /** Lands the player on the clip at the current playhead before resuming, so
+     *  embedded audio starts at the right source position even when the playhead
+     *  was parked in a destination gap or the player had drifted out of the
+     *  active clip. Returns false when playback must not start (the playhead is
+     *  already at the very end of the timeline). */
+    private fun resumePlaybackAligned(): Boolean {
+        val p = _project.value ?: return true
+        val destMs = _playheadMs.value
+        val active = p.activeVideoClipAt(destMs)
+        if (active != null) {
+            val pos = player.pollPosition()
+            val inWindow = pos >= active.sourceStartMs && pos < active.sourceEndMs
+            if (inWindow && (active.sourceUri ?: p.videoUri) == currentMediaUri) {
+                return true
+            }
+            applyPlayerAlignment(destMs)
+            return true
+        }
+        if (destMs >= p.timelineDurationMs()) return false
+        // Parked in a destination gap: jump to the next clip's boundary so
+        // removed content is never heard after resume.
+        val target = destToSource(destMs)
+        val next = p.clips.firstOrNull { target in it.sourceStartMs until it.sourceEndMs }
+        if (next != null) {
+            val uri = next.sourceUri ?: p.videoUri
+            if (uri != null && uri != currentMediaUri) {
+                currentMediaUri = uri
+                player.setVideo(Uri.parse(uri))
+            }
+            player.scrubTo(target, next.sourceStartMs, next.sourceEndMs)
+        }
+        return true
     }
 
     /** Maps a destination (timeline) timestamp to the source media timestamp. */
@@ -1002,12 +1203,14 @@ class EditorViewModel(
         if (d.shouldSeekToZero) {
             player.player.seekTo(0L)
         }
+        var canPlay = true
         if (d.newIsPlaying) {
-            player.play()
+            canPlay = resumePlaybackAligned()
+            if (canPlay) player.play()
         } else {
             player.pause()
         }
-        _isPlaying.value = d.newIsPlaying
+        _isPlaying.value = d.newIsPlaying && canPlay
     }
 
     /** Back-fills the real media duration from the player when the stored
@@ -1033,22 +1236,39 @@ class EditorViewModel(
     }
 
     /** Syncs the timeline playhead with the preview (called on a timer).
-     *  Exposes destination timeline time so UI coordinates always match clips. */
+     *  Exposes destination timeline time so UI coordinates always match clips.
+     *  While paused the needle keeps the parked destination value (it may rest
+     *  in a destination gap); the media position only drives the playhead
+     *  during playback. A pending manual seek is held until the player lands. */
     fun pumpPosition() {
         ensureVideoDuration()
-        val pos = player.pollPosition()
+        val p = _project.value
         val pending = pendingSeekDestMs
+        val pos = player.pollPosition()
+        _playheadMs.value = TimelineTime.nextPlayhead(
+            currentPlayheadMs = _playheadMs.value,
+            pendingSeekDestMs = pending,
+            isPlaying = _isPlaying.value,
+            playerPositionMs = pos,
+            clips = p?.clips ?: emptyList(),
+            mediaEndMs = p?.videoDurationMs ?: 0L,
+            timelineDurationMs = p?.timelineDurationMs() ?: 0L,
+        )
         if (pending != null) {
-            // Protect the user's manual seek: media3 applies seekTo asynchronously,
-            // so a poll between the tap and the applied seek would read the OLD
-            // position and stomp the playhead back to zero / anywhere else.
+            // Protect the user's manual seek: media3 applies seekTo
+            // asynchronously, so clear the pending marker only once the polled
+            // position has actually landed on the requested source target.
             val target = destToSource(pending)
             if (pos >= target - 150L && pos <= target + 150L) {
                 pendingSeekDestMs = null
             }
-            _playheadMs.value = pending
-        } else {
-            _playheadMs.value = sourceToDest(pos)
+        }
+        // While playing, keep the single preview player aligned to the ACTIVE
+        // video clip so only its embedded audio is heard: switch media at
+        // cross-file boundaries, seek over removed source content, and stop at
+        // the end of the timeline.
+        if (_isPlaying.value && p != null) {
+            applyPlayerAlignment(_playheadMs.value)
         }
     }
 

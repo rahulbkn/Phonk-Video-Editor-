@@ -151,4 +151,60 @@ class TimelineTimeTest {
         val x = controller.timeToX(settled)
         assertTrue("settled=$settled x=$x off-screen", x in 0f..936f)
     }
+
+    @Test
+    fun pausedPumpKeepsPlayheadParkedInDestGap() {
+        val clips = splitAndMoveProject()
+        // User scrubbed into the dest gap [40000,60000]; while paused the
+        // needle must STAY parked at 50000 instead of snapping to B's dest
+        // start (60000), so it renders in the gap and never disappears.
+        assertEquals(
+            50_000L,
+            TimelineTime.nextPlayhead(
+                currentPlayheadMs = 50_000L,
+                pendingSeekDestMs = null,
+                isPlaying = false,
+                playerPositionMs = 40_000L, // player landed on B's source start
+                clips = clips,
+                mediaEndMs = mediaEnd,
+                timelineDurationMs = 120_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun pendingSeekIsHeldUntilPlayerLands() {
+        val clips = splitAndMoveProject()
+        // In-flight manual seek: the requested destination wins regardless of
+        // the current player position.
+        assertEquals(
+            50_000L,
+            TimelineTime.nextPlayhead(
+                currentPlayheadMs = 10_000L,
+                pendingSeekDestMs = 50_000L,
+                isPlaying = true,
+                playerPositionMs = 40_000L,
+                clips = clips,
+                mediaEndMs = mediaEnd,
+                timelineDurationMs = 120_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun playingPumpFollowsMediaPosition() {
+        val clips = splitAndMoveProject()
+        assertEquals(
+            90_000L,
+            TimelineTime.nextPlayhead(
+                currentPlayheadMs = 50_000L,
+                pendingSeekDestMs = null,
+                isPlaying = true,
+                playerPositionMs = 70_000L,
+                clips = clips,
+                mediaEndMs = mediaEnd,
+                timelineDurationMs = 120_000L,
+            ),
+        )
+    }
 }

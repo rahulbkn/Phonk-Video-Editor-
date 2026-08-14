@@ -79,6 +79,30 @@ class TimelineController(
         viewportStartMs..(viewportStartMs + viewportMs).coerceAtMost(totalMs)
 
     /**
+     * Keeps the needle/playhead on screen by scrolling the viewport after it
+     * when the playhead has drifted outside the visible window.
+     *
+     * This is the LibreCuts playhead rule: the needle is an overlay on the
+     * timeline coordinate layer at needleX = timeToX(globalTime) and the
+     * viewport follows global time, so the needle can never leave the canvas —
+     * even when it parks in a destination gap (split/trim/move), or after
+     * scroll/zoom pushed it far away. Centring is edge-triggered (only when
+     * the playhead is out of view), so a pan that still shows the needle is
+     * never fought and pinch/button zoom stays pivot-preserving.
+     *
+     * @return true when the viewport moved (caller should redraw).
+     */
+    fun keepPlayheadVisible(): Boolean {
+        if (totalMs <= 0L) return false
+        val range = visibleRange()
+        if (currentMs >= range.first && currentMs <= range.last) return false
+        val newStart = (currentMs - viewportMs / 2).coerceIn(0L, maxStart())
+        if (newStart == viewportStartMs) return false
+        viewportStartMs = newStart
+        return true
+    }
+
+    /**
      * Zooms in/out around the playhead so the needle never leaves the
      * viewport while using the toolbar buttons. [factor] > 1 zooms in.
      * When the playhead is scrolled out of view, pivots on the nearest

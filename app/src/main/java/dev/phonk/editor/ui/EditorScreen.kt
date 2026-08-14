@@ -15,6 +15,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -74,14 +75,18 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.TextFormat
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VolumeDown
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -105,8 +110,11 @@ import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -327,6 +335,11 @@ fun EditorScreen(projectId: String, onBack: () -> Unit) {
     var selectedAspect by remember { mutableStateOf("9:16") }
     var fullscreen by remember { mutableStateOf(false) }
     var zoomTick by remember { mutableStateOf(0) }
+    /** Pending insertion point from a "+" chip tap (global timeline ms), or
+     *  null when the next picked media should be appended instead. */
+    var insertAtMs by remember { mutableStateOf<Long?>(null) }
+    /** Insert menu anchored at the tapped "+" chip (window px). */
+    var insertMenu by remember { mutableStateOf<InsertMenuState?>(null) }
 
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -338,6 +351,36 @@ fun EditorScreen(projectId: String, onBack: () -> Unit) {
     }
     val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) { runCatching { appCtx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }; vm.importAudio(uri) }
+    }
+    val addVideoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { appCtx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            val dur = runCatching { dev.phonk.editor.analysis.AudioExtractor.queryDuration(appCtx.contentResolver, uri) }.getOrDefault(0L)
+            vm.addVideoClip(uri, queryName(appCtx.contentResolver, uri), dur)
+        }
+    }
+    val addImageItemPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { appCtx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            vm.addImageItem(uri, queryName(appCtx.contentResolver, uri))
+        }
+    }
+    val insertVideoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val at = insertAtMs
+        if (uri != null && at != null) {
+            runCatching { appCtx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            val dur = runCatching { dev.phonk.editor.analysis.AudioExtractor.queryDuration(appCtx.contentResolver, uri) }.getOrDefault(0L)
+            vm.insertVideoAt(uri, queryName(appCtx.contentResolver, uri), dur, at)
+        }
+        insertAtMs = null
+    }
+    val insertImagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val at = insertAtMs
+        if (uri != null && at != null) {
+            runCatching { appCtx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            vm.insertImageAt(uri, queryName(appCtx.contentResolver, uri), at)
+        }
+        insertAtMs = null
     }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -457,13 +500,31 @@ fun EditorScreen(projectId: String, onBack: () -> Unit) {
                     onMarker = { vm.addDropAt(playhead) },
                     onZoomIn = { controller.zoomBy(1.4f); zoomTick++ },
                     onZoomOut = { controller.zoomBy(1f / 1.4f); zoomTick++ },
+                    onAddVideo = { addVideoPicker.launch(arrayOf("video/*")) },
+                    onAddImage = { addImageItemPicker.launch(arrayOf("image/*")) },
                 )
 
                 // ─── Timeline ────────────────────────────────────────────────
-                TimelineSection(vm = vm, controller = controller, p = p, playhead = playhead, selectedOverlayId = selectedOverlayId, zoomTick = zoomTick, modifier = Modifier.weight(1f))
+                TimelineSection(vm = vm, controller = controller, p = p, playhead = playhead, selectedOverlayId = selectedOverlayId, zoomTick = zoomTick, onInsertMenu = { atMs, x, y -> insertMenu = InsertMenuState(atMs, x, y) }, modifier = Modifier.weight(1f))
 
                 // ─── Status Bar ──────────────────────────────────────────────
                 StatusBar(selectedAspect = selectedAspect, p = p)
+
+                // ─── "+" Insert Menu (anchored at the tapped chip) ───────────
+                insertMenu?.let { m ->
+                    val d = LocalDensity.current.density
+                    Popup(
+                        alignment = Alignment.TopStart,
+                        offset = IntOffset(m.chipX, m.chipY + (10 * d).toInt()),
+                        onDismissRequest = { insertMenu = null },
+                    ) {
+                        InsertMenu(
+                            insertAtMs = m.insertAtMs,
+                            onAddVideo = { insertMenu = null; insertAtMs = m.insertAtMs; insertVideoPicker.launch(arrayOf("video/*")) },
+                            onAddImage = { insertMenu = null; insertAtMs = m.insertAtMs; insertImagePicker.launch(arrayOf("image/*")) },
+                        )
+                    }
+                }
 
                 // ─── Tool Panel (above contextual toolbar) ───────────────────
                 AnimatedVisibility(
@@ -754,6 +815,7 @@ private fun FullscreenPreview(vm: EditorViewModel, p: PhonkProject?, isPlaying: 
         EditorPreview(
             playerController = vm.player, project = p, isPlaying = isPlaying,
             positionMs = vm.destToSource(playhead), destPlayheadMs = playhead,
+            activeImage = vm.activeImageAt(playhead),
             onPlayPause = { vm.playPause() }, selectedOverlayId = selectedOverlayId,
             onOverlaySelect = { vm.selectOverlay(it) },
             onOverlayTransformBegin = { vm.beginOverlayGesture() },
@@ -837,6 +899,7 @@ private fun PreviewSection(vm: EditorViewModel, p: PhonkProject?, isPlaying: Boo
         EditorPreview(
             playerController = vm.player, project = p, isPlaying = isPlaying,
             positionMs = vm.destToSource(playhead), destPlayheadMs = playhead,
+            activeImage = vm.activeImageAt(playhead),
             onPlayPause = { vm.playPause() }, selectedOverlayId = selectedOverlayId,
             onOverlaySelect = { vm.selectOverlay(it) },
             onOverlayTransformBegin = { vm.beginOverlayGesture() },
@@ -917,13 +980,36 @@ private fun TimelineToolbar(
     onMarker: () -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
+    onAddVideo: () -> Unit,
+    onAddImage: () -> Unit,
 ) {
+    var showAdd by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().height(EditorTokens.TimelineBarHeight).background(colorResource(R.color.toolbar_bg))
             .border(0.5.dp, colorResource(R.color.border_default)).padding(horizontal = EditorTokens.Space4),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
+        Box {
+            EditorIconButton(
+                icon = Icons.Filled.PlaylistAdd,
+                contentDescription = "Add media",
+                onClick = { showAdd = true },
+                target = EditorTokens.CompactTarget,
+                background = colorResource(R.color.surface_control),
+                tint = colorResource(R.color.text_ruler),
+            )
+            DropdownMenu(expanded = showAdd, onDismissRequest = { showAdd = false }) {
+                DropdownMenuItem(
+                    text = { Text("Add Video") },
+                    onClick = { showAdd = false; onAddVideo() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Add Image") },
+                    onClick = { showAdd = false; onAddImage() },
+                )
+            }
+        }
         TimelineToolButton(Icons.Filled.ContentCut, "Split", onSplit)
         TimelineToolButton(Icons.Filled.Tune, "Keyframe", onKeyframe)
         TimelineToolButton(Icons.Filled.MusicNote, "Marker", onMarker)
@@ -959,7 +1045,9 @@ private fun TimelineToolButton(icon: ImageVector, label: String, onClick: () -> 
 }
 
 @Composable
-private fun TimelineSection(vm: EditorViewModel, controller: TimelineController, p: PhonkProject?, playhead: Long, selectedOverlayId: String?, zoomTick: Int, modifier: Modifier = Modifier) {
+private fun TimelineSection(vm: EditorViewModel, controller: TimelineController, p: PhonkProject?, playhead: Long, selectedOverlayId: String?, zoomTick: Int, onInsertMenu: (insertAtMs: Long, chipX: Int, chipY: Int) -> Unit, modifier: Modifier = Modifier) {
+    val selectedImageId by vm.selectedImageId.collectAsStateWithLifecycle()
+    val selectedAudioItemId by vm.selectedAudioItemId.collectAsStateWithLifecycle()
     val tvRef = remember { ViewRef<TimelineView>() }
     AndroidView(
         factory = { ctx ->
@@ -970,14 +1058,24 @@ private fun TimelineSection(vm: EditorViewModel, controller: TimelineController,
                 tv.onSelectClip = { id -> vm.selectClip(id) }; tv.onTrimStart = { ns -> vm.trimClip(ns, vm.selectedClip()?.destEndMs ?: ns) }
                 tv.onTrimEnd = { ne -> vm.trimClip(vm.selectedClip()?.destStartMs ?: ne, ne) }
                 tv.onSelectOverlay = { id -> vm.selectOverlay(id) }; tv.onSetOverlayTiming = { id, s, e -> vm.setOverlayTiming(id, s, e) }
+                tv.onMoveClip = { id, s -> vm.moveClip(id, s) }
+                tv.onSelectImage = { id -> vm.selectImage(id) }; tv.onSetImageTiming = { id, s, e -> vm.setImageItemTiming(id, s, e) }
+                tv.onSelectAudioItem = { id -> vm.selectAudioItem(id) }; tv.onSetAudioItemTiming = { id, s, e -> vm.setAudioItemTiming(id, s, e) }
+                tv.onInsertMenu = { atMs, cx, cy ->
+                    // Chip coords are view-local; convert to window px so the
+                    // Compose Popup anchors exactly on the tapped "+".
+                    val loc = IntArray(2)
+                    tv.getLocationInWindow(loc)
+                    onInsertMenu(atMs, loc[0] + cx, loc[1] + cy)
+                }
             }
         },
-        update = { tv -> syncTimelineView(tv, vm, controller, playhead, selectedOverlayId, zoomTick) },
+        update = { tv -> syncTimelineView(tv, vm, controller, playhead, selectedOverlayId, selectedImageId, selectedAudioItemId, zoomTick) },
         modifier = modifier.fillMaxWidth().heightIn(min = 100.dp),
     )
     LaunchedEffect(p) {
         val tv = tvRef.value ?: return@LaunchedEffect
-        syncTimelineView(tv, vm, controller, playhead, selectedOverlayId, zoomTick)
+        syncTimelineView(tv, vm, controller, playhead, selectedOverlayId, selectedImageId, selectedAudioItemId, zoomTick)
     }
 }
 
@@ -985,11 +1083,59 @@ private class ViewRef<T> {
     var value: T? = null
 }
 
-private fun syncTimelineView(tv: TimelineView, vm: EditorViewModel, controller: TimelineController, playhead: Long, selectedOverlayId: String?, zoomTick: Int) {
+/** Popup anchor for the between-clips insert menu (global timeline ms + the
+ *  tapped chip's window pixel position). */
+private data class InsertMenuState(val insertAtMs: Long, val chipX: Int, val chipY: Int)
+
+@Composable
+private fun InsertMenu(insertAtMs: Long, onAddVideo: () -> Unit, onAddImage: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(EditorTokens.CornerButton),
+        color = colorResource(R.color.surface_panel),
+        shadowElevation = 8.dp,
+        border = BorderStroke(0.5.dp, colorResource(R.color.border_panel)),
+    ) {
+        Column {
+            Text(
+                "Insert at ${formatInsertTime(insertAtMs)}",
+                fontSize = EditorTokens.FontCompact,
+                color = colorResource(R.color.text_muted),
+                modifier = Modifier.padding(horizontal = EditorTokens.Space12, vertical = EditorTokens.Space4),
+            )
+            InsertMenuItem("Add Video", Icons.Filled.Videocam) { onAddVideo() }
+            InsertMenuItem("Add Image", Icons.Filled.Image) { onAddImage() }
+        }
+    }
+}
+
+@Composable
+private fun InsertMenuItem(label: String, icon: ImageVector, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = EditorTokens.Space12, vertical = EditorTokens.Space8),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(EditorTokens.Space8),
+    ) {
+        Icon(icon, contentDescription = null, tint = colorResource(R.color.text_ruler), modifier = Modifier.size(16.dp))
+        Text(label, fontSize = EditorTokens.FontLabel, color = colorResource(R.color.text_on_surface))
+    }
+}
+
+private fun formatInsertTime(ms: Long): String {
+    val totalSec = ms.coerceAtLeast(0L) / 1000
+    val min = totalSec / 60
+    val sec = totalSec % 60
+    return if (min > 0) "%d:%02d".format(min, sec) else "0:%02d".format(sec)
+}
+
+private fun syncTimelineView(tv: TimelineView, vm: EditorViewModel, controller: TimelineController, playhead: Long, selectedOverlayId: String?, selectedImageId: String?, selectedAudioItemId: String?, zoomTick: Int) {
     val pr = vm.project.value ?: PhonkProject()
-    tv.project = pr; tv.selectedOverlayId = selectedOverlayId
+    tv.project = pr; tv.selectedOverlayId = selectedOverlayId; tv.selectedImageId = selectedImageId; tv.selectedAudioItemId = selectedAudioItemId
     tv.controller.totalMs = pr.timelineDurationMs().takeIf { it > 0 } ?: pr.videoDurationMs
     tv.controller.currentMs = playhead.coerceIn(0L, tv.controller.totalMs)
+    // The needle is GLOBAL TIMELINE TIME (needleX = timeToX(globalTime)); the
+    // viewport follows it so it can never leave the canvas, even inside a
+    // destination gap after split/trim/move or after scroll/zoom.
+    tv.keepPlayheadVisible()
     tv.refresh()
     if (zoomTick > 0) tv.refresh()
 }

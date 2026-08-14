@@ -112,4 +112,9 @@
     <color name="track_text">#34D399</color>
     <color name="track_effects">#FACC15</color>
     <color name="track_fx">#39D7B1</color>
+
+    <!-- "+" insertion chip between video-track items -->
+    <color name="chip_bg">#2A2A3A</color>
+    <color name="chip_stroke">#A855F7</color>
+    <color name="chip_fg">#FFFFFF</color>
 </resources>

@@ -149,6 +149,9 @@ fun EditorPreview(
     fullscreen: Boolean,
     onToggleFullscreen: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Still-image item active at [destPlayheadMs]; shown full-frame over the
+     *  player surface while the playhead is inside its window. */
+    activeImage: dev.phonk.editor.model.ImageItem? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val imageCache = remember { mutableStateMapOf<String, ImageBitmap>() }
@@ -206,6 +209,19 @@ fun EditorPreview(
                 },
                 modifier = Modifier.fillMaxSize(),
             )
+            activeImage?.let { img ->
+                val bmp = rememberBitmapFromUri(img.uri, imageCache)
+                if (bmp != null) {
+                    Image(
+                        bitmap = bmp,
+                        contentDescription = img.label,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize().background(Color.Black),
+                    )
+                } else {
+                    Box(Modifier.fillMaxSize().background(Color.Black))
+                }
+            }
             if (frame.flashAlpha > 0f) {
                 Box(
                     Modifier

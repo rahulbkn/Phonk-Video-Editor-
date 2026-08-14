@@ -24,6 +24,9 @@ data class PhonkProject(
     val drops: List<DropMarker> = emptyList(),
     val sections: List<AudioSection> = emptyList(),
     val clips: List<ClipSegment> = emptyList(),
+    /** Still-image clips placed directly on the video track (not floating
+     *  overlays). Each contributes its window to the global timeline. */
+    val imageItems: List<ImageItem> = emptyList(),
     val effects: List<ClipEffect> = emptyList(),
     val waveform: List<Float> = emptyList(),
     val export: ExportConfig = ExportConfig(),
@@ -82,8 +85,27 @@ data class PhonkProject(
     fun analysisEnergyCurve(): FloatArray =
         if (waveform.isEmpty()) FloatArray(0) else FloatArray(waveform.size) { waveform[it] }
 
-    /** Total destination timeline length in ms, derived from clips. */
-    fun timelineDurationMs(): Long = clips.maxOfOrNull { it.destEndMs } ?: 0L
+    /** Total destination timeline length in ms — the GLOBAL timeline timebase.
+     *  Equals the maximum end of every timeline item (video clips, image items,
+     *  audio items), so gaps, stills and audio rows all extend the canvas the
+     *  same way and the needle can always sit inside/after them. */
+    fun timelineDurationMs(): Long = maxOf(
+        clips.maxOfOrNull { it.destEndMs } ?: 0L,
+        imageItems.maxOfOrNull { it.endMs } ?: 0L,
+        audioItems.maxOfOrNull { it.endMs } ?: 0L,
+    )
+
+    /** Unified view of everything drawn on the video track (clips + images),
+     *  all on the same destination time axis. [kind] is "video" or "image". */
+    fun trackItems(): List<TrackItem> =
+        clips.map { TrackItem(it.id, "video", it.sourceUri ?: videoUri, "", it.destStartMs, it.destEndMs) } +
+            imageItems.map { TrackItem(it.id, "image", it.uri, it.label, it.startMs, it.endMs) }
+
+    /** The video clip whose destination window contains [destMs], or null when
+     *  the playhead rests on an image item / a destination gap. Images are
+     *  stills that never feed the player, so they are excluded here. */
+    fun activeVideoClipAt(destMs: Long): ClipSegment? =
+        clips.firstOrNull { destMs in it.destStartMs until it.destEndMs }
 
     /** Folds the player's real media duration back into the project when the
      *  stored metadata was missing (e.g. a failed probe at import time). When
@@ -124,6 +146,8 @@ data class ClipSegment(
     val sourceEndMs: Long,
     val destStartMs: Long,
     val destEndMs: Long,
+    /** Media uri this clip plays from. Null = the project's main [PhonkProject.videoUri]. */
+    val sourceUri: String? = null,
     val effect: EffectKind = EffectKind.NONE,
     val effectStrength: Float = 0f,
     val dropTransition: Boolean = false,
@@ -231,6 +255,32 @@ data class AudioItem(
     /** Draw order within the audio section; higher = lower (later) row. */
     val rowOrder: Int = 0,
 )
+
+/** A still-image clip placed on the video track. It has its own media file and
+ *  timeline window, moves/trims like a video clip, and the preview shows the
+ *  image full-frame instead of the main video while the playhead is inside it. */
+data class ImageItem(
+    val id: String = java.util.UUID.randomUUID().toString().take(8),
+    val uri: String? = null,
+    val label: String = "Image",
+    val startMs: Long = 0L,
+    val endMs: Long = 3000L,
+) {
+    val durationMs: Long get() = (endMs - startMs).coerceAtLeast(0L)
+}
+
+/** Unified descriptor of a video-track item (clip or image) for drawing and
+ *  hit-testing. All times are GLOBAL destination-timeline ms. */
+data class TrackItem(
+    val id: String,
+    val kind: String,
+    val uri: String?,
+    val label: String,
+    val startMs: Long,
+    val endMs: Long,
+) {
+    val isImage: Boolean get() = kind == "image"
+}
 
 /** An image/shape overlay anchored on the destination timeline. */
 data class OverlayLayer(
@@ -365,6 +415,7 @@ class ProjectCodec {
         o.put("clips", JSONArray().also { arr -> p.clips.forEach { c ->
             arr.put(JSONObject()
                 .put("id", c.id)
+                .put("sourceUri", c.sourceUri)
                 .put("sourceStartMs", c.sourceStartMs)
                 .put("sourceEndMs", c.sourceEndMs)
                 .put("destStartMs", c.destStartMs)
@@ -376,6 +427,14 @@ class ProjectCodec {
                 .put("speed", c.speed.toDouble())
                 .put("reversed", c.reversed)
                 .put("transition", c.transition))
+        }})
+        o.put("imageItems", JSONArray().also { arr -> p.imageItems.forEach { img ->
+            arr.put(JSONObject()
+                .put("id", img.id)
+                .put("uri", img.uri)
+                .put("label", img.label)
+                .put("startMs", img.startMs)
+                .put("endMs", img.endMs))
         }})
         o.put("effects", JSONArray().also { arr -> p.effects.forEach { e ->
             arr.put(JSONObject()
@@ -550,6 +609,7 @@ class ProjectCodec {
             drops = drops,
             sections = parseSections(o.optJSONArray("sections")),
             clips = parseClips(o.optJSONArray("clips")),
+            imageItems = parseImageItems(o.optJSONArray("imageItems")),
             effects = parseEffects(o.optJSONArray("effects")),
             waveform = parseFloatList(o.optJSONArray("waveform")),
             export = parseExport(o.optJSONObject("export")),
@@ -685,6 +745,27 @@ class ProjectCodec {
                         reversed = c.optBoolean("reversed", false),
                         transition = if (c.has("transition") && !c.isNull("transition"))
                             c.optString("transition", null) else null,
+                        sourceUri = if (c.has("sourceUri") && !c.isNull("sourceUri"))
+                            c.optString("sourceUri", null) else null,
+                    )
+                )
+            }
+        }
+    }
+
+    private fun parseImageItems(arr: JSONArray?): List<ImageItem> {
+        if (arr == null) return emptyList()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val img = arr.optJSONObject(i) ?: continue
+                add(
+                    ImageItem(
+                        id = img.optString("id", ""),
+                        uri = if (img.has("uri") && !img.isNull("uri"))
+                            img.optString("uri", null) else null,
+                        label = img.optString("label", "Image"),
+                        startMs = img.optLong("startMs", 0L),
+                        endMs = img.optLong("endMs", 3000L),
                     )
                 )
             }

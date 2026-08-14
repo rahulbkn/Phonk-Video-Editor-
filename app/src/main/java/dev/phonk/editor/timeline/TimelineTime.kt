@@ -52,6 +52,30 @@ object TimelineTime {
         else mediaEndMs
     }
 
+    /**
+     * Next global playhead value for one pump tick.
+     *
+     * - A pending manual seek is held (the requested destination) until the
+     *   player lands, so an in-flight media3 seek can never stomp the needle.
+     * - While paused the parked value is kept unchanged, so the needle can
+     *   rest in a destination gap (created by split/trim/move) instead of
+     *   snapping to the next clip's start and jumping off its coordinate.
+     * - Only during playback does the media position drive the playhead.
+     */
+    fun nextPlayhead(
+        currentPlayheadMs: Long,
+        pendingSeekDestMs: Long?,
+        isPlaying: Boolean,
+        playerPositionMs: Long,
+        clips: List<ClipSegment>,
+        mediaEndMs: Long,
+        timelineDurationMs: Long,
+    ): Long = when {
+        pendingSeekDestMs != null -> pendingSeekDestMs
+        !isPlaying -> currentPlayheadMs
+        else -> sourceToDest(clips, playerPositionMs, mediaEndMs, timelineDurationMs)
+    }
+
     private fun mapToDest(clip: ClipSegment, srcMs: Long): Long {
         val src = (clip.sourceEndMs - clip.sourceStartMs).coerceAtLeast(1L)
         val dest = (clip.destEndMs - clip.destStartMs).coerceAtLeast(1L)
